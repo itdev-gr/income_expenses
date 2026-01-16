@@ -1,0 +1,104 @@
+---
+import Layout from '../../components/Layout.astro';
+import TransactionTable from '../../components/TransactionTable.astro';
+import Filters from '../../components/Filters.astro';
+import { requireUser } from '../../lib/auth';
+import { listTransactions } from '../../lib/firestore/transactions';
+import { listCategories } from '../../lib/firestore/categories';
+import { auth } from '../../lib/firebaseAdmin';
+import { parseDateKey } from '../../lib/dates';
+import type { TransactionType } from '../../lib/types';
+
+const user = await requireUser(Astro.request);
+
+// Parse filters
+const fromParam = Astro.url.searchParams.get('from');
+const toParam = Astro.url.searchParams.get('to');
+const typeParam = Astro.url.searchParams.get('type') as TransactionType | 'all' | null;
+const categoryIdParam = Astro.url.searchParams.get('categoryId');
+
+const fromDate = fromParam ? parseDateKey(fromParam) : undefined;
+const toDate = toParam ? parseDateKey(toParam) : undefined;
+const type = typeParam && typeParam !== 'all' ? typeParam : undefined;
+const categoryId = categoryIdParam || undefined;
+
+const page = parseInt(Astro.url.searchParams.get('page') || '1');
+const limit = 25;
+const offset = (page - 1) * limit;
+
+const { transactions, total } = await listTransactions({
+	fromDate,
+	toDate,
+	type,
+	categoryId,
+	limit,
+	offset,
+});
+
+const categories = await listCategories();
+const categoryMap = new Map(categories.map(c => [c.id, c.name]));
+
+// Get user emails for display
+const userIds = new Set(transactions.map(t => t.createdBy));
+const userEmails = new Map<string, string>();
+for (const uid of userIds) {
+	try {
+		const userRecord = await auth.getUser(uid);
+		userEmails.set(uid, userRecord.email || uid);
+	} catch {
+		userEmails.set(uid, uid);
+	}
+}
+
+const totalPages = Math.ceil(total / limit);
+---
+
+<Layout user={user} title="Transactions - Company Ledger">
+	<div class="flex justify-between items-center mb-6">
+		<h1 class="text-2xl font-bold text-gray-900">Transactions</h1>
+		<a
+			href="/transactions/new"
+			class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+		>
+			New Transaction
+		</a>
+	</div>
+
+	<Filters 
+		categories={categories}
+		defaultFrom={fromParam || undefined}
+		defaultTo={toParam || undefined}
+		defaultType={typeParam || 'all'}
+		defaultCategoryId={categoryIdParam || undefined}
+	/>
+
+	<TransactionTable 
+		transactions={transactions}
+		categories={categoryMap}
+		userEmails={userEmails}
+	/>
+
+	{totalPages > 1 && (
+		<div class="mt-6 flex justify-center space-x-2">
+			{page > 1 && (
+				<a
+					href={`/transactions?page=${page - 1}${fromParam ? `&from=${fromParam}` : ''}${toParam ? `&to=${toParam}` : ''}${typeParam ? `&type=${typeParam}` : ''}${categoryIdParam ? `&categoryId=${categoryIdParam}` : ''}`}
+					class="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300"
+				>
+					Previous
+				</a>
+			)}
+			<span class="px-4 py-2 text-gray-700">
+				Page {page} of {totalPages}
+			</span>
+			{page < totalPages && (
+				<a
+					href={`/transactions?page=${page + 1}${fromParam ? `&from=${fromParam}` : ''}${toParam ? `&to=${toParam}` : ''}${typeParam ? `&type=${typeParam}` : ''}${categoryIdParam ? `&categoryId=${categoryIdParam}` : ''}`}
+					class="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300"
+				>
+					Next
+				</a>
+			)}
+		</div>
+	)}
+</Layout>

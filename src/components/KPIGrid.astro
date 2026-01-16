@@ -1,0 +1,48 @@
+---
+interface KPI {
+	label: string;
+	income: number;
+	expense: number;
+	net: number;
+}
+
+interface Props {
+	title: string;
+	data: KPI | null;
+}
+
+const { title, data } = Astro.props;
+
+function formatCurrency(cents: number): string {
+	return new Intl.NumberFormat('en-US', {
+		style: 'currency',
+		currency: 'EUR',
+	}).format(cents / 100);
+}
+---
+
+<div class="mb-6">
+	<h2 class="text-lg font-semibold text-gray-900 mb-4">{title}</h2>
+	{data ? (
+		<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+			<div class="bg-white rounded-lg shadow p-6">
+				<div class="text-sm text-gray-600 mb-1">Income</div>
+				<div class="text-2xl font-bold text-green-600">{formatCurrency(data.income)}</div>
+			</div>
+			<div class="bg-white rounded-lg shadow p-6">
+				<div class="text-sm text-gray-600 mb-1">Expense</div>
+				<div class="text-2xl font-bold text-red-600">{formatCurrency(data.expense)}</div>
+			</div>
+			<div class="bg-white rounded-lg shadow p-6">
+				<div class="text-sm text-gray-600 mb-1">Net</div>
+				<div class={`text-2xl font-bold ${data.net >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+					{formatCurrency(data.net)}
+				</div>
+			</div>
+		</div>
+	) : (
+		<div class="bg-white rounded-lg shadow p-6 text-center text-gray-500">
+			No data available
+		</div>
+	)}
+</div>

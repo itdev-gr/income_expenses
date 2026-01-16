@@ -1,0 +1,88 @@
+---
+import type { Category, TransactionType } from '../lib/types';
+import { formatDate, getToday } from '../lib/dates';
+
+interface Props {
+	categories: Category[];
+	defaultFrom?: string;
+	defaultTo?: string;
+	defaultType?: TransactionType | 'all';
+	defaultCategoryId?: string;
+}
+
+const { 
+	categories, 
+	defaultFrom = formatDate(new Date(getToday().getTime() - 30 * 24 * 60 * 60 * 1000)),
+	defaultTo = formatDate(getToday()),
+	defaultType = 'all',
+	defaultCategoryId = '',
+} = Astro.props;
+---
+
+<form method="GET" action="/transactions" class="bg-white rounded-lg shadow p-4 mb-6">
+	<div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+		<div>
+			<label for="from" class="block text-sm font-medium text-gray-700 mb-1">From Date</label>
+			<input
+				type="date"
+				id="from"
+				name="from"
+				value={defaultFrom}
+				class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+			/>
+		</div>
+
+		<div>
+			<label for="to" class="block text-sm font-medium text-gray-700 mb-1">To Date</label>
+			<input
+				type="date"
+				id="to"
+				name="to"
+				value={defaultTo}
+				class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+			/>
+		</div>
+
+		<div>
+			<label for="type" class="block text-sm font-medium text-gray-700 mb-1">Type</label>
+			<select
+				id="type"
+				name="type"
+				class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+			>
+				<option value="all" selected={defaultType === 'all'}>All</option>
+				<option value="income" selected={defaultType === 'income'}>Income</option>
+				<option value="expense" selected={defaultType === 'expense'}>Expense</option>
+			</select>
+		</div>
+
+		<div>
+			<label for="categoryId" class="block text-sm font-medium text-gray-700 mb-1">Category</label>
+			<select
+				id="categoryId"
+				name="categoryId"
+				class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+			>
+				<option value="">All Categories</option>
+				{categories.map(cat => (
+					<option value={cat.id} selected={defaultCategoryId === cat.id}>{cat.name}</option>
+				))}
+			</select>
+		</div>
+	</div>
+
+	<div class="mt-4">
+		<button
+			type="submit"
+			class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+		>
+			Filter
+		</button>
+		<a
+			href="/transactions"
+			class="ml-2 px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-500"
+		>
+			Clear
+		</a>
+	</div>
+</form>

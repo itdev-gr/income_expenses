@@ -1,0 +1,86 @@
+---
+import { Chart, registerables } from 'chart.js';
+import type { DailySummary } from '../lib/types';
+
+interface Props {
+	data: DailySummary[];
+	title: string;
+}
+
+const { data, title } = Astro.props;
+
+Chart.register(...registerables);
+---
+
+<div class="bg-white rounded-lg shadow p-6 mb-6">
+	<h2 class="text-lg font-semibold text-gray-900 mb-4">{title}</h2>
+	<canvas id="chart"></canvas>
+</div>
+
+<script>
+	const ctx = document.getElementById('chart') as HTMLCanvasElement;
+	if (ctx && data && data.length > 0) {
+		const chartData = {
+			labels: data.map(d => d.dateKey),
+			datasets: [
+				{
+					label: 'Income',
+					data: data.map(d => d.incomeCents / 100),
+					borderColor: 'rgb(34, 197, 94)',
+					backgroundColor: 'rgba(34, 197, 94, 0.1)',
+					tension: 0.1,
+				},
+				{
+					label: 'Expense',
+					data: data.map(d => d.expenseCents / 100),
+					borderColor: 'rgb(239, 68, 68)',
+					backgroundColor: 'rgba(239, 68, 68, 0.1)',
+					tension: 0.1,
+				},
+				{
+					label: 'Net',
+					data: data.map(d => d.netCents / 100),
+					borderColor: 'rgb(59, 130, 246)',
+					backgroundColor: 'rgba(59, 130, 246, 0.1)',
+					tension: 0.1,
+				},
+			],
+		};
+
+		new Chart(ctx, {
+			type: 'line',
+			data: chartData,
+			options: {
+				responsive: true,
+				scales: {
+					y: {
+						beginAtZero: false,
+						ticks: {
+							callback: function(value) {
+								return '€' + value;
+							},
+						},
+					},
+				},
+				plugins: {
+					tooltip: {
+						callbacks: {
+							label: function(context) {
+								return context.dataset.label + ': €' + context.parsed.y.toFixed(2);
+							},
+						},
+					},
+				},
+			},
+		});
+	} else if (ctx) {
+		// Show message if no data
+		const ctx2d = ctx.getContext('2d');
+		if (ctx2d) {
+			ctx2d.fillStyle = '#6B7280';
+			ctx2d.font = '16px sans-serif';
+			ctx2d.textAlign = 'center';
+			ctx2d.fillText('No data available', ctx.width / 2, ctx.height / 2);
+		}
+	}
+</script>

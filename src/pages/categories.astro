@@ -1,0 +1,135 @@
+---
+import Layout from '../components/Layout.astro';
+import { requireAdmin } from '../lib/auth';
+import { listCategories, createCategory, toggleCategory, seedDefaultCategories } from '../lib/firestore/categories';
+
+const user = await requireAdmin(Astro.request);
+
+let success = false;
+let error: string | null = null;
+
+if (Astro.request.method === 'POST') {
+	const formData = await Astro.request.formData();
+	const action = formData.get('action')?.toString();
+
+	if (action === 'create') {
+		const name = formData.get('name')?.toString();
+		if (!name) {
+			error = 'Category name is required';
+		} else {
+			try {
+				await createCategory(name);
+				success = true;
+			} catch (err: any) {
+				error = err.message || 'Failed to create category';
+			}
+		}
+	} else if (action === 'toggle') {
+		const categoryId = formData.get('categoryId')?.toString();
+		if (!categoryId) {
+			error = 'Category ID is required';
+		} else {
+			try {
+				await toggleCategory(categoryId);
+				success = true;
+			} catch (err: any) {
+				error = err.message || 'Failed to toggle category';
+			}
+		}
+	} else if (action === 'seed') {
+		try {
+			await seedDefaultCategories();
+			success = true;
+		} catch (err: any) {
+			error = err.message || 'Failed to seed categories';
+		}
+	}
+}
+
+const categories = await listCategories();
+---
+
+<Layout user={user} title="Categories - Company Ledger">
+	<h1 class="text-2xl font-bold text-gray-900 mb-6">Categories</h1>
+
+	{success && (
+		<div class="mb-4 p-3 bg-green-100 border border-green-400 text-green-700 rounded">
+			Operation completed successfully!
+		</div>
+	)}
+
+	{error && (
+		<div class="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
+			{error}
+		</div>
+	)}
+
+	<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+		<div class="bg-white rounded-lg shadow p-6">
+			<h2 class="text-lg font-semibold text-gray-900 mb-4">Add Category</h2>
+			<form method="POST" class="space-y-4">
+				<input type="hidden" name="action" value="create" />
+				<div>
+					<label for="name" class="block text-sm font-medium text-gray-700 mb-1">Category Name</label>
+					<input
+						type="text"
+						id="name"
+						name="name"
+						required
+						class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+					/>
+				</div>
+				<button
+					type="submit"
+					class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+				>
+					Create Category
+				</button>
+			</form>
+
+			<div class="mt-6">
+				<form method="POST">
+					<input type="hidden" name="action" value="seed" />
+					<button
+						type="submit"
+						class="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500"
+					>
+						Seed Default Categories
+					</button>
+				</form>
+			</div>
+		</div>
+
+		<div class="bg-white rounded-lg shadow p-6">
+			<h2 class="text-lg font-semibold text-gray-900 mb-4">All Categories</h2>
+			<div class="space-y-2">
+				{categories.length === 0 ? (
+					<p class="text-gray-500">No categories found. Create one or seed defaults.</p>
+				) : (
+					categories.map(cat => (
+						<div class="flex items-center justify-between p-3 bg-gray-50 rounded">
+							<div>
+								<span class="font-medium text-gray-900">{cat.name}</span>
+								<span class={`ml-2 px-2 py-1 text-xs rounded-full ${
+									cat.active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+								}`}>
+									{cat.active ? 'Active' : 'Inactive'}
+								</span>
+							</div>
+							<form method="POST" class="inline">
+								<input type="hidden" name="action" value="toggle" />
+								<input type="hidden" name="categoryId" value={cat.id} />
+								<button
+									type="submit"
+									class="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+								>
+									{cat.active ? 'Disable' : 'Enable'}
+								</button>
+							</form>
+						</div>
+					))
+				)}
+			</div>
+		</div>
+	</div>
+</Layout>

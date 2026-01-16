@@ -1,0 +1,111 @@
+---
+import Layout from '../../components/Layout.astro';
+import TransactionForm from '../../components/TransactionForm.astro';
+import TransactionTable from '../../components/TransactionTable.astro';
+import { requireUser } from '../../lib/auth';
+import { createTransaction } from '../../lib/firestore/transactions';
+import { listActiveCategories } from '../../lib/firestore/categories';
+import { listTransactions } from '../../lib/firestore/transactions';
+import { auth } from '../../lib/firebaseAdmin';
+import { getToday, formatDate, toDateKey } from '../../lib/dates';
+import type { TransactionType } from '../../lib/types';
+
+const user = await requireUser(Astro.request);
+
+let success = false;
+let error: string | null = null;
+let stayOnPage = false;
+
+if (Astro.request.method === 'POST') {
+	const formData = await Astro.request.formData();
+	const dateStr = formData.get('date')?.toString();
+	const type = formData.get('type')?.toString() as TransactionType;
+	const amountStr = formData.get('amount')?.toString();
+	const categoryId = formData.get('categoryId')?.toString();
+	const note = formData.get('note')?.toString() || '';
+	const action = formData.get('action')?.toString();
+
+	if (!dateStr || !type || !amountStr || !categoryId) {
+		error = 'All fields are required';
+	} else {
+		try {
+			const date = new Date(dateStr + 'T00:00:00');
+			const amountCents = Math.round(parseFloat(amountStr) * 100);
+
+			if (amountCents <= 0) {
+				error = 'Amount must be greater than 0';
+			} else {
+				await createTransaction({
+					ts: date,
+					type,
+					amountCents,
+					categoryId,
+					note,
+					createdBy: user.uid,
+				});
+
+				success = true;
+				stayOnPage = action === 'saveAndAdd';
+			}
+		} catch (err: any) {
+			error = err.message || 'Failed to create transaction';
+		}
+	}
+}
+
+const categories = await listActiveCategories();
+
+// Get today's transactions
+const today = getToday();
+const todayKey = toDateKey(today);
+const { transactions: todayTransactions } = await listTransactions({
+	fromDate: new Date(todayKey + 'T00:00:00'),
+	toDate: new Date(todayKey + 'T23:59:59'),
+	limit: 50,
+});
+
+const categoryMap = new Map(categories.map(c => [c.id, c.name]));
+const userIds = new Set(todayTransactions.map(t => t.createdBy));
+const userEmails = new Map<string, string>();
+for (const uid of userIds) {
+	try {
+		const userRecord = await auth.getUser(uid);
+		userEmails.set(uid, userRecord.email || uid);
+	} catch {
+		userEmails.set(uid, uid);
+	}
+}
+---
+
+<Layout user={user} title="New Transaction - Company Ledger">
+	<h1 class="text-2xl font-bold text-gray-900 mb-6">New Transaction</h1>
+
+	{success && !stayOnPage && (
+		<div class="mb-4 p-3 bg-green-100 border border-green-400 text-green-700 rounded">
+			Transaction created successfully! <a href="/transactions" class="underline">View all transactions</a>
+		</div>
+	)}
+
+	{success && stayOnPage && (
+		<div class="mb-4 p-3 bg-green-100 border border-green-400 text-green-700 rounded">
+			Transaction created successfully! You can add another below.
+		</div>
+	)}
+
+	{error && (
+		<div class="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
+			{error}
+		</div>
+	)}
+
+	<TransactionForm categories={categories} />
+
+	<div class="mt-8">
+		<h2 class="text-lg font-semibold text-gray-900 mb-4">Today's Transactions</h2>
+		<TransactionTable 
+			transactions={todayTransactions}
+			categories={categoryMap}
+			userEmails={userEmails}
+		/>
+	</div>
+</Layout>
