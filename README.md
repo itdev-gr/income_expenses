@@ -312,7 +312,44 @@ The built files will be in the `dist/` directory.
 
 ## Deployment
 
-### Option 1: Firebase Hosting (Recommended)
+### Option 1: Vercel (Recommended for Astro SSR)
+
+1. **Connect Repository:**
+   - Go to [vercel.com](https://vercel.com) and sign in with GitHub
+   - Click "Add New Project"
+   - Import your `itdev-gr/income_expenses` repository
+
+2. **Configure Project:**
+   - Vercel will auto-detect Astro
+   - Framework Preset: Astro
+   - Build Command: `npm run build` (auto-detected)
+   - Output Directory: `.vercel/output` (auto-detected)
+
+3. **Add Environment Variables:**
+   Go to Project Settings → Environment Variables and add:
+   
+   **Required (Server-side):**
+   - `FIREBASE_PROJECT_ID` - Your Firebase project ID
+   - `FIREBASE_CLIENT_EMAIL` - Service account email (from service account JSON)
+   - `FIREBASE_PRIVATE_KEY` - Service account private key (from service account JSON, include the full key with `\n` characters)
+   
+   **Required (Client-side - must start with PUBLIC_):**
+   - `PUBLIC_FIREBASE_API_KEY` - Web API Key
+   - `PUBLIC_FIREBASE_AUTH_DOMAIN` - `your-project-id.firebaseapp.com`
+   - `PUBLIC_FIREBASE_PROJECT_ID` - Your Firebase project ID
+   - `PUBLIC_FIREBASE_APP_ID` - Your App ID
+
+4. **Deploy:**
+   - Click "Deploy"
+   - Vercel will build and deploy your app
+   - Your app will be available at `https://your-project.vercel.app`
+
+5. **Troubleshooting:**
+   - If you get HTTP 500 errors, check that all environment variables are set
+   - Check Vercel logs: Project → Deployments → Click on a deployment → View Function Logs
+   - Make sure `FIREBASE_PRIVATE_KEY` includes the full key with newlines (`\n`)
+
+### Option 2: Firebase Hosting
 
 1. Install Firebase CLI:
    ```bash
