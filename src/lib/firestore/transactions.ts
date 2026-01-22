@@ -7,7 +7,7 @@ import { updateSummaries } from './summaries';
  * Create a new transaction and update summaries
  */
 export async function createTransaction(
-	data: Omit<Transaction, 'id' | 'dateKey' | 'weekKey' | 'monthKey' | 'createdAt'>
+	data: Omit<Transaction, 'id' | 'createdAt'>
 ): Promise<string> {
 	const transactionDate = data.ts;
 	const dateKey = toDateKey(transactionDate);
@@ -15,21 +15,31 @@ export async function createTransaction(
 	const monthKey = toMonthKey(transactionDate);
 	const now = new Date();
 
-	const transactionData = {
+	// Build transaction data, excluding undefined optional fields
+	const transactionData: any = {
 		ts: transactionDate,
-		dateKey,
-		weekKey,
-		monthKey,
-		...data,
+		type: data.type,
+		amountCents: data.amountCents,
+		categoryId: data.categoryId,
+		note: data.note || '',
+		createdBy: data.createdBy,
 		createdAt: now,
 	};
+
+	// Only include optional fields if they have values
+	if (data.clickupId) {
+		transactionData.clickupId = data.clickupId;
+	}
+	if (data.companyName) {
+		transactionData.companyName = data.companyName;
+	}
 
 	// Use batch write to ensure atomicity
 	const batch = db.batch();
 	const transactionRef = db.collection('transactions').doc();
 	batch.set(transactionRef, transactionData);
 
-	// Update summaries
+	// Update summaries (calculate keys from ts)
 	await updateSummaries(batch, {
 		dateKey,
 		weekKey,
@@ -53,18 +63,24 @@ export async function deleteTransaction(transactionId: string): Promise<void> {
 		throw new Error('Transaction not found');
 	}
 
-	const transaction = transactionDoc.data() as Transaction;
+	const data = transactionDoc.data()!;
+	const transactionDate = data.ts.toDate();
+	
+	// Calculate keys from ts (since we no longer store them)
+	const dateKey = toDateKey(transactionDate);
+	const weekKey = toISOWeekKey(transactionDate);
+	const monthKey = toMonthKey(transactionDate);
 	
 	const batch = db.batch();
 	batch.delete(db.collection('transactions').doc(transactionId));
 
 	// Reverse the summary updates
 	await updateSummaries(batch, {
-		dateKey: transaction.dateKey,
-		weekKey: transaction.weekKey,
-		monthKey: transaction.monthKey,
-		type: transaction.type,
-		amountCents: transaction.amountCents,
+		dateKey,
+		weekKey,
+		monthKey,
+		type: data.type,
+		amountCents: data.amountCents,
 		operation: 'decrement',
 	});
 

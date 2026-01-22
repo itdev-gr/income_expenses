@@ -102,6 +102,90 @@ To give a user admin privileges:
 
 The user will have admin access on their next login.
 
+## Zapier Webhook Integration
+
+The app provides a webhook endpoint for creating transactions from external services like Zapier. This ensures transactions are created properly with all required fields and summary updates.
+
+### Webhook Endpoint
+
+**URL**: `https://your-domain.com/api/webhook/transaction`  
+**Method**: `POST`  
+**Content-Type**: `application/json`
+
+### Request Body
+
+```json
+{
+  "date": "2026-01-22T13:18:08Z",           // Required - ISO date string or YYYY-MM-DD
+  "type": "income",                          // Required - "income" or "expense"
+  "amount": 1000.00,                        // Required - Amount in euros (will be converted to cents)
+  "categoryId": "xeO3wG3RooawVhBpbZtq",    // Required - Category ID or "cash"/"online"
+  "createdBy": "Wr8QmyYjmGRr3bZJTrSEJJELIlb2", // Required - User UID
+  "note": "Payment description",            // Optional
+  "clickupId": "86c7n2897",                 // Optional - ClickUp ID
+  "companyName": "Company Name"             // Optional - Company name
+}
+```
+
+### Field Details
+
+- **date**: ISO 8601 date string (e.g., `"2026-01-22T13:18:08Z"`) or simple date format (`"2026-01-22"`)
+- **type**: Must be exactly `"income"` or `"expense"`
+- **amount**: Number in euros (e.g., `1000.00` for €1000.00). Will be automatically converted to cents.
+- **categoryId**: 
+  - Use a valid category ID from your Firestore `categories` collection, OR
+  - Use `"cash"` or `"online"` for payment type categories (will be created automatically if needed)
+- **createdBy**: Firebase Auth UID of the user creating the transaction
+- **note**: Optional transaction note
+- **clickupId**: Optional ClickUp task ID
+- **companyName**: Optional company name
+
+### Response
+
+**Success (200)**:
+```json
+{
+  "success": true,
+  "transactionId": "abc123...",
+  "message": "Transaction created successfully"
+}
+```
+
+**Error (400/500)**:
+```json
+{
+  "success": false,
+  "error": "Error message describing what went wrong"
+}
+```
+
+### Zapier Configuration
+
+1. In your Zapier Zap, add a **Webhooks by Zapier** → **POST** action
+2. Set the URL to: `https://your-domain.com/api/webhook/transaction`
+3. Set Method to: `POST`
+4. Set Data Pass-Through to: `No`
+5. In the **Data** section, map your fields:
+   - `date`: Map from your trigger (format as ISO date or YYYY-MM-DD)
+   - `type`: Map "income" or "expense" from your trigger
+   - `amount`: Map the amount value
+   - `categoryId`: Use a category ID or "cash"/"online"
+   - `createdBy`: Use a fixed user UID or map from your trigger
+   - `note`: Map from your trigger (optional)
+   - `clickupId`: Map from your trigger (optional)
+   - `companyName`: Map from your trigger (optional)
+
+### Important Notes
+
+- **Do NOT send** `dateKey`, `weekKey`, `monthKey`, or `createdAt` - these are calculated automatically
+- The webhook automatically:
+  - Calculates date keys from the timestamp
+  - Updates summary documents (stats_daily, stats_weekly, stats_monthly)
+  - Validates all data
+  - Handles payment type categories ("cash"/"online")
+- Transactions created via webhook will appear immediately on the dashboard
+- If you need to use a system user for Zapier, create a user in Firebase Auth and use their UID as `createdBy`
+
 ## Project Structure
 
 ```
@@ -141,14 +225,13 @@ src/
 ### Collections
 
 1. **transactions**: Individual transaction records
-   - `ts`: Timestamp
-   - `dateKey`: "YYYY-MM-DD" (Europe/Athens)
-   - `weekKey`: "YYYY-WW" (ISO week)
-   - `monthKey`: "YYYY-MM"
+   - `ts`: Timestamp (dateKey/weekKey/monthKey calculated on-the-fly)
    - `type`: "income" | "expense"
    - `amountCents`: Amount in cents (integer)
    - `categoryId`: Reference to category
    - `note`: Optional note
+   - `clickupId`: Optional ClickUp ID
+   - `companyName`: Optional company name
    - `createdBy`: User UID
    - `createdAt`: Server timestamp
 

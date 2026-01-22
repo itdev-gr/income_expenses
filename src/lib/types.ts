@@ -2,14 +2,13 @@ export type TransactionType = 'income' | 'expense';
 
 export interface Transaction {
 	id: string;
-	ts: Date;
-	dateKey: string; // YYYY-MM-DD
-	weekKey: string; // YYYY-WW
-	monthKey: string; // YYYY-MM
+	ts: Date; // Transaction timestamp - dateKey/weekKey/monthKey calculated on-the-fly
 	type: TransactionType;
 	amountCents: number;
 	categoryId: string;
 	note: string;
+	clickupId?: string;
+	companyName?: string;
 	createdBy: string;
 	createdAt: Date;
 }
@@ -18,6 +17,7 @@ export interface Category {
 	id: string;
 	name: string;
 	active: boolean;
+	type?: 'income' | 'expense' | 'both'; // Category type: income-only, expense-only, or both
 	createdAt: Date;
 }
 
@@ -65,4 +65,25 @@ export interface DashboardData {
 	dailyChart: DailySummary[];
 	weeklyTable: WeeklySummary[];
 	monthlyTable: MonthlySummary[];
+}
+
+export type RepeatFrequency = 'daily' | 'weekly' | 'monthly' | 'yearly';
+
+export interface RepeatablePayment {
+	id: string;
+	name: string;
+	type: TransactionType;
+	amountCents: number;
+	categoryId: string;
+	clickupId?: string;
+	companyName?: string;
+	note?: string;
+	frequency: RepeatFrequency;
+	startDate: Date;
+	endDate?: Date; // Optional - if not set, repeats indefinitely
+	nextDueDate: Date;
+	active: boolean;
+	createdBy: string;
+	createdAt: Date;
+	updatedAt: Date;
 }

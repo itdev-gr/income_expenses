@@ -1,0 +1,276 @@
+---
+import Layout from '../../../components/Layout.astro';
+import { requireUser } from '../../../lib/auth';
+import { getRepeatablePayment, updateRepeatablePayment } from '../../../lib/firestore/repeatablePayments';
+import { listActiveCategories, getOrCreatePaymentTypeCategory } from '../../../lib/firestore/categories';
+import { getToday, formatDate } from '../../../lib/dates';
+import type { TransactionType, RepeatFrequency } from '../../../lib/types';
+
+const user = await requireUser(Astro.request);
+const id = Astro.params.id;
+
+if (!id) {
+	return Astro.redirect('/repeatable-payments', 302);
+}
+
+const payment = await getRepeatablePayment(id);
+
+if (!payment) {
+	return Astro.redirect('/repeatable-payments', 302);
+}
+
+let success = false;
+let error: string | null = null;
+
+if (Astro.request.method === 'POST') {
+	const formData = await Astro.request.formData();
+	const name = formData.get('name')?.toString();
+	const type = formData.get('type')?.toString() as TransactionType;
+	const amountStr = formData.get('amount')?.toString();
+	const categoryId = formData.get('categoryId')?.toString();
+	const clickupId = formData.get('clickupId')?.toString() || '';
+	const companyName = formData.get('companyName')?.toString() || '';
+	const note = formData.get('note')?.toString() || '';
+	const frequency = formData.get('frequency')?.toString() as RepeatFrequency;
+	const startDateStr = formData.get('startDate')?.toString();
+	const endDateStr = formData.get('endDate')?.toString();
+	const active = formData.get('active')?.toString() === 'true';
+
+	if (!name || !type || !amountStr || !categoryId || !frequency || !startDateStr) {
+		error = 'All required fields must be filled';
+	} else {
+		try {
+			const amountCents = Math.round(parseFloat(amountStr) * 100);
+			const startDate = new Date(startDateStr + 'T00:00:00');
+			const endDate = endDateStr ? new Date(endDateStr + 'T23:59:59') : undefined;
+
+			if (amountCents <= 0) {
+				error = 'Amount must be greater than 0';
+			} else {
+				// Handle payment type (cash/online) - get or create the category
+				let finalCategoryId = categoryId;
+				if (categoryId === 'cash' || categoryId === 'online') {
+					const categoryName = categoryId === 'cash' ? 'Cash' : 'Online Payment';
+					finalCategoryId = await getOrCreatePaymentTypeCategory(categoryName);
+				}
+
+				const updateData: any = {
+					name,
+					type,
+					amountCents,
+					categoryId: finalCategoryId,
+					frequency,
+					startDate,
+					active,
+				};
+
+				// Only include optional fields - set to null if empty to remove from Firestore
+				updateData.clickupId = clickupId || null;
+				updateData.companyName = companyName || null;
+				updateData.note = note || null;
+				updateData.endDate = endDate || null;
+
+				await updateRepeatablePayment(id, updateData);
+				success = true;
+			}
+		} catch (err: any) {
+			error = err.message || 'Failed to update repeatable payment';
+		}
+	}
+}
+
+// Reload payment data after update
+const updatedPayment = success ? await getRepeatablePayment(id) : payment;
+const currentPayment = updatedPayment || payment;
+
+const categories = await listActiveCategories();
+const categoryMap = new Map(categories.map(c => [c.id, c.name]));
+
+// Determine current payment type selection
+const currentCategoryName = categoryMap.get(currentPayment.categoryId);
+const isCash = currentCategoryName === 'Cash' || currentPayment.categoryId === 'cash';
+const isOnline = currentCategoryName === 'Online Payment' || currentPayment.categoryId === 'online';
+---
+
+<Layout user={user} title="Edit Repeatable Payment - Company Ledger">
+	<div class="flex justify-between items-center mb-6">
+		<h1 class="text-2xl font-bold text-gray-900">Edit Repeatable Payment</h1>
+		<a
+			href="/repeatable-payments"
+			class="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300"
+		>
+			Back to List
+		</a>
+	</div>
+
+	{success && (
+		<div class="mb-4 p-3 bg-green-100 border border-green-400 text-green-700 rounded">
+			Repeatable payment updated successfully! <a href="/repeatable-payments" class="underline">View all payments</a>
+		</div>
+	)}
+
+	{error && (
+		<div class="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
+			{error}
+		</div>
+	)}
+
+	<div class="bg-white rounded-lg shadow p-6 max-w-2xl">
+		<form method="POST" class="space-y-4">
+			<div>
+				<label for="name" class="block text-sm font-medium text-gray-700 mb-1">Name *</label>
+				<input
+					type="text"
+					id="name"
+					name="name"
+					value={currentPayment.name}
+					required
+					placeholder="e.g., Monthly Rent, Weekly Salary"
+					class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+				/>
+			</div>
+
+			<div>
+				<label class="block text-sm font-medium text-gray-700 mb-1">Type *</label>
+				<div class="flex space-x-4">
+					<label class="flex items-center">
+						<input type="radio" name="type" value="income" checked={currentPayment.type === 'income'} class="mr-2" />
+						<span>Income</span>
+					</label>
+					<label class="flex items-center">
+						<input type="radio" name="type" value="expense" checked={currentPayment.type === 'expense'} class="mr-2" />
+						<span>Expense</span>
+					</label>
+				</div>
+			</div>
+
+			<div>
+				<label for="amount" class="block text-sm font-medium text-gray-700 mb-1">Amount (€) *</label>
+				<input
+					type="number"
+					id="amount"
+					name="amount"
+					step="0.01"
+					min="0"
+					value={(currentPayment.amountCents / 100).toFixed(2)}
+					required
+					class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+				/>
+			</div>
+
+			<div>
+				<label for="categoryId" class="block text-sm font-medium text-gray-700 mb-1">Payment Type *</label>
+				<select
+					id="categoryId"
+					name="categoryId"
+					required
+					class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+				>
+					<option value="">Select payment type</option>
+					<option value="cash" selected={isCash}>Cash</option>
+					<option value="online" selected={isOnline}>Online Payment</option>
+				</select>
+			</div>
+
+			<div>
+				<label for="frequency" class="block text-sm font-medium text-gray-700 mb-1">Frequency *</label>
+				<select
+					id="frequency"
+					name="frequency"
+					required
+					class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+				>
+					<option value="daily" selected={currentPayment.frequency === 'daily'}>Daily</option>
+					<option value="weekly" selected={currentPayment.frequency === 'weekly'}>Weekly</option>
+					<option value="monthly" selected={currentPayment.frequency === 'monthly'}>Monthly</option>
+					<option value="yearly" selected={currentPayment.frequency === 'yearly'}>Yearly</option>
+				</select>
+			</div>
+
+			<div>
+				<label for="startDate" class="block text-sm font-medium text-gray-700 mb-1">Start Date *</label>
+				<input
+					type="date"
+					id="startDate"
+					name="startDate"
+					value={formatDate(currentPayment.startDate)}
+					required
+					class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+				/>
+			</div>
+
+			<div>
+				<label for="endDate" class="block text-sm font-medium text-gray-700 mb-1">End Date (Optional)</label>
+				<input
+					type="date"
+					id="endDate"
+					name="endDate"
+					value={currentPayment.endDate ? formatDate(currentPayment.endDate) : ''}
+					class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+				/>
+				<p class="text-xs text-gray-500 mt-1">Leave empty for indefinite repetition</p>
+			</div>
+
+			<div>
+				<label for="clickupId" class="block text-sm font-medium text-gray-700 mb-1">Clickup Id</label>
+				<input
+					type="text"
+					id="clickupId"
+					name="clickupId"
+					value={currentPayment.clickupId || ''}
+					class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+				/>
+			</div>
+
+			<div>
+				<label for="companyName" class="block text-sm font-medium text-gray-700 mb-1">Company Name</label>
+				<input
+					type="text"
+					id="companyName"
+					name="companyName"
+					value={currentPayment.companyName || ''}
+					class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+				/>
+			</div>
+
+			<div>
+				<label for="note" class="block text-sm font-medium text-gray-700 mb-1">Note</label>
+				<input
+					type="text"
+					id="note"
+					name="note"
+					value={currentPayment.note || ''}
+					class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+				/>
+			</div>
+
+			<div>
+				<label class="flex items-center">
+					<input 
+						type="checkbox" 
+						name="active" 
+						value="true"
+						checked={currentPayment.active}
+						class="mr-2"
+					/>
+					<span class="text-sm font-medium text-gray-700">Active</span>
+				</label>
+			</div>
+
+			<div class="flex space-x-3 pt-4">
+				<button
+					type="submit"
+					class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+				>
+					Update Repeatable Payment
+				</button>
+				<a
+					href="/repeatable-payments"
+					class="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300"
+				>
+					Cancel
+				</a>
+			</div>
+		</form>
+	</div>
+</Layout>

@@ -1,9 +1,9 @@
 import type { APIRoute } from 'astro';
-import { requireUser } from '../../../lib/auth';
+import { requireAdmin } from '../../../lib/auth';
 import { deleteTransaction } from '../../../lib/firestore/transactions';
 
 export const POST: APIRoute = async ({ params, request, redirect }) => {
-	const user = await requireUser(request);
+	const user = await requireAdmin(request); // Only admin can delete
 	const id = params.id;
 
 	if (!id) {

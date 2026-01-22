@@ -4,7 +4,7 @@ import TransactionForm from '../../components/TransactionForm.astro';
 import TransactionTable from '../../components/TransactionTable.astro';
 import { requireUser } from '../../lib/auth';
 import { createTransaction } from '../../lib/firestore/transactions';
-import { listActiveCategories } from '../../lib/firestore/categories';
+import { listActiveCategories, getOrCreatePaymentTypeCategory } from '../../lib/firestore/categories';
 import { listTransactions } from '../../lib/firestore/transactions';
 import { auth } from '../../lib/firebaseAdmin';
 import { getToday, formatDate, toDateKey } from '../../lib/dates';
@@ -23,6 +23,8 @@ if (Astro.request.method === 'POST') {
 	const amountStr = formData.get('amount')?.toString();
 	const categoryId = formData.get('categoryId')?.toString();
 	const note = formData.get('note')?.toString() || '';
+	const clickupId = formData.get('clickupId')?.toString() || '';
+	const companyName = formData.get('companyName')?.toString() || '';
 	const action = formData.get('action')?.toString();
 
 	if (!dateStr || !type || !amountStr || !categoryId) {
@@ -35,12 +37,21 @@ if (Astro.request.method === 'POST') {
 			if (amountCents <= 0) {
 				error = 'Amount must be greater than 0';
 			} else {
+				// Handle payment type (cash/online) - get or create the category
+				let finalCategoryId = categoryId;
+				if (categoryId === 'cash' || categoryId === 'online') {
+					const categoryName = categoryId === 'cash' ? 'Cash' : 'Online Payment';
+					finalCategoryId = await getOrCreatePaymentTypeCategory(categoryName);
+				}
+
 				await createTransaction({
 					ts: date,
 					type,
 					amountCents,
-					categoryId,
+					categoryId: finalCategoryId,
 					note,
+					clickupId: clickupId || undefined,
+					companyName: companyName || undefined,
 					createdBy: user.uid,
 				});
 
@@ -53,7 +64,8 @@ if (Astro.request.method === 'POST') {
 	}
 }
 
-const categories = await listActiveCategories();
+// Get all categories for filtering client-side
+const allCategories = await listActiveCategories();
 
 // Get today's transactions
 const today = getToday();
@@ -64,7 +76,7 @@ const { transactions: todayTransactions } = await listTransactions({
 	limit: 50,
 });
 
-const categoryMap = new Map(categories.map(c => [c.id, c.name]));
+const categoryMap = new Map(allCategories.map(c => [c.id, c.name]));
 const userIds = new Set(todayTransactions.map(t => t.createdBy));
 const userEmails = new Map<string, string>();
 for (const uid of userIds) {
@@ -98,7 +110,7 @@ for (const uid of userIds) {
 		</div>
 	)}
 
-	<TransactionForm categories={categories} />
+	<TransactionForm categories={allCategories} />
 
 	<div class="mt-8">
 		<h2 class="text-lg font-semibold text-gray-900 mb-4">Today's Transactions</h2>
@@ -106,6 +118,7 @@ for (const uid of userIds) {
 			transactions={todayTransactions}
 			categories={categoryMap}
 			userEmails={userEmails}
+			user={user}
 		/>
 	</div>
 </Layout>

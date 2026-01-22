@@ -138,7 +138,7 @@ export async function updateSummaries(
 /**
  * Get dashboard data (today, week, month, charts, tables)
  */
-export async function getDashboardData(rangeDays: number = 30): Promise<{
+export async function getDashboardData(fromDate?: Date, toDate?: Date): Promise<{
 	today: DailySummary | null;
 	week: WeeklySummary | null;
 	month: MonthlySummary | null;
@@ -177,22 +177,28 @@ export async function getDashboardData(rangeDays: number = 30): Promise<{
 		updatedAt: monthDoc.data()!.updatedAt.toDate(),
 	} as MonthlySummary : null;
 
-	// Get daily chart data (last N days)
-	const startDate = new Date(now);
-	startDate.setDate(startDate.getDate() - rangeDays);
-	const startKey = toDateKey(startDate);
+	// Get daily chart data based on date range
+	const chartFromDate = fromDate || (() => {
+		const defaultStart = new Date(now);
+		defaultStart.setDate(defaultStart.getDate() - 30);
+		return defaultStart;
+	})();
+	const chartToDate = toDate || now;
+	const startKey = toDateKey(chartFromDate);
+	const endKey = toDateKey(chartToDate);
 	
-	const dailySnapshot = await db.collection('stats_daily')
-		.where('dateKey', '>=', startKey)
-		.where('dateKey', '<=', todayKey)
-		.orderBy('dateKey', 'asc')
-		.get();
+	// Fetch all daily summaries and filter by date range in memory
+	// This avoids Firestore index requirements
+	const dailySnapshot = await db.collection('stats_daily').get();
 	
-	const dailyChart = dailySnapshot.docs.map(doc => ({
-		dateKey: doc.id,
-		...doc.data(),
-		updatedAt: doc.data().updatedAt.toDate(),
-	} as DailySummary));
+	const dailyChart = dailySnapshot.docs
+		.map(doc => ({
+			dateKey: doc.id,
+			...doc.data(),
+			updatedAt: doc.data().updatedAt.toDate(),
+		} as DailySummary))
+		.filter(summary => summary.dateKey >= startKey && summary.dateKey <= endKey)
+		.sort((a, b) => a.dateKey.localeCompare(b.dateKey));
 
 	// Get weekly table (last 8 weeks)
 	const weeklySnapshot = await db.collection('stats_weekly')

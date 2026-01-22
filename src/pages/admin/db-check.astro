@@ -1,0 +1,320 @@
+---
+import Layout from '../../components/Layout.astro';
+import { requireAdmin } from '../../lib/auth';
+import { db, auth } from '../../lib/firebaseAdmin';
+import { formatDate } from '../../lib/dates';
+
+const user = await requireAdmin(Astro.request);
+
+// Fetch all data
+const [transactions, categories, payments, dailyStats, weeklyStats, monthlyStats, users] = await Promise.all([
+	db.collection('transactions').orderBy('ts', 'desc').limit(100).get(),
+	db.collection('categories').get(),
+	db.collection('repeatable_payments').get(),
+	db.collection('stats_daily').orderBy('dateKey', 'desc').limit(30).get(),
+	db.collection('stats_weekly').orderBy('weekKey', 'desc').limit(12).get(),
+	db.collection('stats_monthly').orderBy('monthKey', 'desc').limit(12).get(),
+	db.collection('users').get(),
+]);
+
+// Get user emails
+const userEmails = new Map<string, string>();
+for (const userDoc of users.docs) {
+	try {
+		const userRecord = await auth.getUser(userDoc.id);
+		userEmails.set(userDoc.id, userRecord.email || userDoc.id);
+	} catch {
+		userEmails.set(userDoc.id, userDoc.id);
+	}
+}
+
+// Get category names for transactions
+const categoryMap = new Map<string, string>();
+categories.docs.forEach(doc => {
+	categoryMap.set(doc.id, doc.data().name);
+});
+---
+
+<Layout user={user} title="Database Check - Admin">
+	<div class="container mx-auto px-4 py-8">
+		<div class="flex justify-between items-center mb-6">
+			<h1 class="text-3xl font-bold">Database Overview</h1>
+			<a href="/dashboard" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300">
+				Back to Dashboard
+			</a>
+		</div>
+
+		<!-- Summary Cards -->
+		<div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+			<div class="bg-white rounded-lg shadow p-4">
+				<div class="text-sm text-gray-600">Transactions</div>
+				<div class="text-2xl font-bold">{transactions.size}</div>
+			</div>
+			<div class="bg-white rounded-lg shadow p-4">
+				<div class="text-sm text-gray-600">Categories</div>
+				<div class="text-2xl font-bold">{categories.size}</div>
+			</div>
+			<div class="bg-white rounded-lg shadow p-4">
+				<div class="text-sm text-gray-600">Repeatable Payments</div>
+				<div class="text-2xl font-bold">{payments.size}</div>
+			</div>
+			<div class="bg-white rounded-lg shadow p-4">
+				<div class="text-sm text-gray-600">Users</div>
+				<div class="text-2xl font-bold">{users.size}</div>
+			</div>
+		</div>
+
+		<!-- Transactions -->
+		<div class="bg-white rounded-lg shadow p-6 mb-6">
+			<h2 class="text-xl font-semibold mb-4">Transactions (Showing last 100 of {transactions.size})</h2>
+			<div class="overflow-x-auto">
+				<table class="min-w-full divide-y divide-gray-200">
+					<thead class="bg-gray-50">
+						<tr>
+							<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+							<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+							<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
+							<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Category</th>
+							<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Note</th>
+							<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Clickup ID</th>
+							<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Company</th>
+							<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Created By</th>
+						</tr>
+					</thead>
+					<tbody class="bg-white divide-y divide-gray-200">
+						{transactions.docs.map(doc => {
+							const data = doc.data();
+							return (
+								<tr>
+									<td class="px-4 py-3 text-sm">{formatDate(data.ts.toDate())}</td>
+									<td class="px-4 py-3 text-sm">
+										<span class={`px-2 py-1 text-xs rounded-full ${
+											data.type === 'income' 
+												? 'bg-green-100 text-green-800' 
+												: 'bg-red-100 text-red-800'
+										}`}>
+											{data.type}
+										</span>
+									</td>
+									<td class="px-4 py-3 text-sm font-medium">€{(data.amountCents / 100).toFixed(2)}</td>
+									<td class="px-4 py-3 text-sm">{categoryMap.get(data.categoryId) || data.categoryId}</td>
+									<td class="px-4 py-3 text-sm">{data.note || '-'}</td>
+									<td class="px-4 py-3 text-sm">{data.clickupId || '-'}</td>
+									<td class="px-4 py-3 text-sm">{data.companyName || '-'}</td>
+									<td class="px-4 py-3 text-sm text-gray-500">{userEmails.get(data.createdBy) || data.createdBy}</td>
+								</tr>
+							);
+						})}
+					</tbody>
+				</table>
+			</div>
+		</div>
+
+		<!-- Categories -->
+		<div class="bg-white rounded-lg shadow p-6 mb-6">
+			<h2 class="text-xl font-semibold mb-4">Categories ({categories.size})</h2>
+			<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+				{categories.docs.map(doc => {
+					const data = doc.data();
+					return (
+						<div class="p-3 bg-gray-50 rounded border">
+							<div class="flex items-center justify-between">
+								<strong class="text-gray-900">{data.name}</strong>
+								<span class={`px-2 py-1 text-xs rounded-full ${
+									data.active 
+										? 'bg-green-100 text-green-800' 
+										: 'bg-gray-100 text-gray-800'
+								}`}>
+									{data.active ? 'Active' : 'Inactive'}
+								</span>
+							</div>
+							{data.type && (
+								<div class="text-xs text-gray-500 mt-1">Type: {data.type}</div>
+							)}
+							<div class="text-xs text-gray-400 mt-1">ID: {doc.id}</div>
+						</div>
+					);
+				})}
+			</div>
+		</div>
+
+		<!-- Repeatable Payments -->
+		<div class="bg-white rounded-lg shadow p-6 mb-6">
+			<h2 class="text-xl font-semibold mb-4">Repeatable Payments ({payments.size})</h2>
+			<div class="space-y-2">
+				{payments.docs.map(doc => {
+					const data = doc.data();
+					return (
+						<div class="p-4 bg-gray-50 rounded border">
+							<div class="flex items-start justify-between">
+								<div class="flex-1">
+									<div class="flex items-center space-x-2 mb-2">
+										<strong class="text-gray-900">{data.name}</strong>
+										<span class={`px-2 py-1 text-xs rounded-full ${
+											data.type === 'income' 
+												? 'bg-green-100 text-green-800' 
+												: 'bg-red-100 text-red-800'
+										}`}>
+											{data.type}
+										</span>
+										<span class={`px-2 py-1 text-xs rounded-full ${
+											data.active 
+												? 'bg-green-100 text-green-800' 
+												: 'bg-gray-100 text-gray-800'
+										}`}>
+											{data.active ? 'Active' : 'Inactive'}
+										</span>
+									</div>
+									<div class="text-sm text-gray-600 space-y-1">
+										<p><strong>Amount:</strong> €{(data.amountCents / 100).toFixed(2)}</p>
+										<p><strong>Frequency:</strong> {data.frequency.charAt(0).toUpperCase() + data.frequency.slice(1)}</p>
+										<p><strong>Next Due:</strong> {formatDate(data.nextDueDate.toDate())}</p>
+										{data.companyName && <p><strong>Company:</strong> {data.companyName}</p>}
+										{data.clickupId && <p><strong>Clickup ID:</strong> {data.clickupId}</p>}
+										{data.note && <p><strong>Note:</strong> {data.note}</p>}
+									</div>
+								</div>
+								<div class="text-xs text-gray-400">ID: {doc.id}</div>
+							</div>
+						</div>
+					);
+				})}
+			</div>
+		</div>
+
+		<!-- Daily Stats -->
+		<div class="bg-white rounded-lg shadow p-6 mb-6">
+			<h2 class="text-xl font-semibold mb-4">Daily Summaries (Last 30 days)</h2>
+			<div class="overflow-x-auto">
+				<table class="min-w-full divide-y divide-gray-200">
+					<thead class="bg-gray-50">
+						<tr>
+							<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+							<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Income</th>
+							<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Expense</th>
+							<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Net</th>
+							<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Count</th>
+						</tr>
+					</thead>
+					<tbody class="bg-white divide-y divide-gray-200">
+						{dailyStats.docs.map(doc => {
+							const data = doc.data();
+							return (
+								<tr>
+									<td class="px-4 py-3 text-sm font-medium">{doc.id}</td>
+									<td class="px-4 py-3 text-sm text-green-600">€{(data.incomeCents / 100).toFixed(2)}</td>
+									<td class="px-4 py-3 text-sm text-red-600">€{(data.expenseCents / 100).toFixed(2)}</td>
+									<td class={`px-4 py-3 text-sm font-medium ${data.netCents >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+										€{(data.netCents / 100).toFixed(2)}
+									</td>
+									<td class="px-4 py-3 text-sm text-gray-500">
+										{data.countIncome || 0} income, {data.countExpense || 0} expense
+									</td>
+								</tr>
+							);
+						})}
+					</tbody>
+				</table>
+			</div>
+		</div>
+
+		<!-- Weekly Stats -->
+		<div class="bg-white rounded-lg shadow p-6 mb-6">
+			<h2 class="text-xl font-semibold mb-4">Weekly Summaries (Last 12 weeks)</h2>
+			<div class="overflow-x-auto">
+				<table class="min-w-full divide-y divide-gray-200">
+					<thead class="bg-gray-50">
+						<tr>
+							<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Week</th>
+							<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Income</th>
+							<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Expense</th>
+							<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Net</th>
+							<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Count</th>
+						</tr>
+					</thead>
+					<tbody class="bg-white divide-y divide-gray-200">
+						{weeklyStats.docs.map(doc => {
+							const data = doc.data();
+							return (
+								<tr>
+									<td class="px-4 py-3 text-sm font-medium">{doc.id}</td>
+									<td class="px-4 py-3 text-sm text-green-600">€{(data.incomeCents / 100).toFixed(2)}</td>
+									<td class="px-4 py-3 text-sm text-red-600">€{(data.expenseCents / 100).toFixed(2)}</td>
+									<td class={`px-4 py-3 text-sm font-medium ${data.netCents >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+										€{(data.netCents / 100).toFixed(2)}
+									</td>
+									<td class="px-4 py-3 text-sm text-gray-500">
+										{data.countIncome || 0} income, {data.countExpense || 0} expense
+									</td>
+								</tr>
+							);
+						})}
+					</tbody>
+				</table>
+			</div>
+		</div>
+
+		<!-- Monthly Stats -->
+		<div class="bg-white rounded-lg shadow p-6 mb-6">
+			<h2 class="text-xl font-semibold mb-4">Monthly Summaries (Last 12 months)</h2>
+			<div class="overflow-x-auto">
+				<table class="min-w-full divide-y divide-gray-200">
+					<thead class="bg-gray-50">
+						<tr>
+							<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Month</th>
+							<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Income</th>
+							<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Expense</th>
+							<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Net</th>
+							<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Count</th>
+						</tr>
+					</thead>
+					<tbody class="bg-white divide-y divide-gray-200">
+						{monthlyStats.docs.map(doc => {
+							const data = doc.data();
+							return (
+								<tr>
+									<td class="px-4 py-3 text-sm font-medium">{doc.id}</td>
+									<td class="px-4 py-3 text-sm text-green-600">€{(data.incomeCents / 100).toFixed(2)}</td>
+									<td class="px-4 py-3 text-sm text-red-600">€{(data.expenseCents / 100).toFixed(2)}</td>
+									<td class={`px-4 py-3 text-sm font-medium ${data.netCents >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+										€{(data.netCents / 100).toFixed(2)}
+									</td>
+									<td class="px-4 py-3 text-sm text-gray-500">
+										{data.countIncome || 0} income, {data.countExpense || 0} expense
+									</td>
+								</tr>
+							);
+						})}
+					</tbody>
+				</table>
+			</div>
+		</div>
+
+		<!-- Users -->
+		<div class="bg-white rounded-lg shadow p-6">
+			<h2 class="text-xl font-semibold mb-4">Users ({users.size})</h2>
+			<div class="space-y-2">
+				{users.docs.map(doc => {
+					const data = doc.data();
+					return (
+						<div class="p-4 bg-gray-50 rounded border">
+							<div class="flex items-center justify-between">
+								<div>
+									<strong class="text-gray-900">{userEmails.get(doc.id) || doc.id}</strong>
+									<span class={`ml-3 px-2 py-1 text-xs rounded-full ${
+										data.role === 'admin' 
+											? 'bg-purple-100 text-purple-800' 
+											: 'bg-gray-100 text-gray-800'
+									}`}>
+										{data.role || 'staff'}
+									</span>
+								</div>
+								<div class="text-xs text-gray-400">ID: {doc.id}</div>
+							</div>
+						</div>
+					);
+				})}
+			</div>
+		</div>
+	</div>
+</Layout>
