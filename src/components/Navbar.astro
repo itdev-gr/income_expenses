@@ -19,11 +19,11 @@ const { user } = Astro.props;
 					<a href="/transactions" class="text-gray-700 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium">
 						Transactions
 					</a>
-					<a href="/repeatable-payments" class="text-gray-700 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium">
-						Repeatable Payments
-					</a>
 					{user.role === 'admin' && (
 						<>
+							<a href="/repeatable-payments" class="text-gray-700 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium">
+								Repeatable Payments
+							</a>
 							<a href="/categories" class="text-gray-700 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium">
 								Categories
 							</a>

@@ -1,6 +1,6 @@
 ---
 import Layout from '../components/Layout.astro';
-import { requireUser } from '../lib/auth';
+import { requireAdmin } from '../lib/auth';
 import { 
 	listRepeatablePayments, 
 	createRepeatablePayment, 
@@ -12,7 +12,7 @@ import { auth } from '../lib/firebaseAdmin';
 import { getToday, formatDate } from '../lib/dates';
 import type { TransactionType, RepeatFrequency } from '../lib/types';
 
-const user = await requireUser(Astro.request);
+const user = await requireAdmin(Astro.request);
 
 let success = false;
 let error: string | null = null;

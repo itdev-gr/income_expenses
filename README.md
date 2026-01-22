@@ -53,14 +53,15 @@ A complete web application for tracking company income and expenses with a compr
 2. Fill in your Firebase credentials:
 
    **From Service Account JSON:**
-   - `FIREBASE_PROJECT_ID`: Your project ID
-   - `FIREBASE_CLIENT_EMAIL`: The `client_email` field from the JSON
-   - `FIREBASE_PRIVATE_KEY`: The `private_key` field from the JSON (keep the `\n` characters)
+   - `FIREBASE_PROJECT_ID`: Your project ID (e.g., `expenses-income-716d1`)
+   - `FIREBASE_CLIENT_EMAIL`: The `client_email` field from the JSON (e.g., `firebase-adminsdk-fbsvc@expenses-income-716d1.iam.gserviceaccount.com`)
+   - `FIREBASE_PRIVATE_KEY`: The `private_key` field from the JSON (keep the `\n` characters and include the full key with `-----BEGIN PRIVATE KEY-----` and `-----END PRIVATE KEY-----`)
 
    **From Firebase Console → Project Settings → General:**
-   - `PUBLIC_FIREBASE_API_KEY`: Your Web API Key
-   - `PUBLIC_FIREBASE_AUTH_DOMAIN`: `your-project-id.firebaseapp.com`
-   - `PUBLIC_FIREBASE_APP_ID`: Your App ID
+   - `PUBLIC_FIREBASE_API_KEY`: Your Web API Key (e.g., `AIzaSyC1O9y6adSnfs4xv8hZdsbcf4ucL1SkSD0`)
+   - `PUBLIC_FIREBASE_AUTH_DOMAIN`: `your-project-id.firebaseapp.com` (e.g., `expenses-income-716d1.firebaseapp.com`)
+   - `PUBLIC_FIREBASE_PROJECT_ID`: Your project ID (same as `FIREBASE_PROJECT_ID`)
+   - `PUBLIC_FIREBASE_APP_ID`: Your App ID (e.g., `1:670555855437:web:0de1e2cee36e965bcb1a04`)
 
 ### 3. Install Dependencies
 

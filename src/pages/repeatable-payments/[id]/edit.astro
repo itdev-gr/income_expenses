@@ -1,12 +1,12 @@
 ---
 import Layout from '../../../components/Layout.astro';
-import { requireUser } from '../../../lib/auth';
+import { requireAdmin } from '../../../lib/auth';
 import { getRepeatablePayment, updateRepeatablePayment } from '../../../lib/firestore/repeatablePayments';
 import { listActiveCategories, getOrCreatePaymentTypeCategory } from '../../../lib/firestore/categories';
 import { getToday, formatDate } from '../../../lib/dates';
 import type { TransactionType, RepeatFrequency } from '../../../lib/types';
 
-const user = await requireUser(Astro.request);
+const user = await requireAdmin(Astro.request);
 const id = Astro.params.id;
 
 if (!id) {
