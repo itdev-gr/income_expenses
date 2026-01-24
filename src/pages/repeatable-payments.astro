@@ -16,6 +16,7 @@ const user = await requireAdmin(Astro.request);
 
 let success = false;
 let error: string | null = null;
+let runSummary: { created: number } | null = null;
 
 if (Astro.request.method === 'POST') {
 	const formData = await Astro.request.formData();
@@ -78,7 +79,7 @@ if (Astro.request.method === 'POST') {
 			error = 'Payment ID is required';
 		} else {
 			try {
-				await deleteRepeatablePayment(id);
+				await deleteRepeatablePayment(id, user.uid);
 				success = true;
 			} catch (err: any) {
 				error = err.message || 'Failed to delete repeatable payment';
@@ -90,11 +91,25 @@ if (Astro.request.method === 'POST') {
 			error = 'Payment ID is required';
 		} else {
 			try {
-				await toggleRepeatablePayment(id);
+				await toggleRepeatablePayment(id, user.uid);
 				success = true;
 			} catch (err: any) {
 				error = err.message || 'Failed to toggle repeatable payment';
 			}
+		}
+	} else if (action === 'runDue') {
+		try {
+			const response = await fetch('/api/repeatable-payments/run-due', {
+				method: 'POST',
+			});
+			if (!response.ok) {
+				const text = await response.text();
+				throw new Error(text || 'Failed to run due payments');
+			}
+			const data = await response.json();
+			runSummary = { created: data.created || 0 };
+		} catch (err: any) {
+			error = err.message || 'Failed to run due payments';
 		}
 	}
 }
@@ -139,6 +154,24 @@ function formatCurrency(cents: number): string {
 			{error}
 		</div>
 	)}
+	{runSummary && (
+		<div class="mb-4 p-3 bg-blue-100 border border-blue-400 text-blue-700 rounded">
+			Run due payments completed. Created {runSummary.created} transactions.
+		</div>
+	)}
+
+	<div class="mb-4">
+		<form method="POST" class="inline">
+			<input type="hidden" name="action" value="runDue" />
+			<button
+				type="submit"
+				class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+				onclick="return confirm('Run due payments now?')"
+			>
+				Run Due Payments
+			</button>
+		</form>
+	</div>
 
 	<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
 		<!-- Add New Repeatable Payment Form -->

@@ -2,6 +2,7 @@ import { db } from '../firebaseAdmin';
 import type { Transaction, TransactionType } from '../types';
 import { toDateKey, toMonthKey, toISOWeekKey } from '../dates';
 import { updateSummaries } from './summaries';
+import { logAudit } from './audit';
 
 /**
  * Create a new transaction and update summaries
@@ -50,13 +51,25 @@ export async function createTransaction(
 	});
 
 	await batch.commit();
+	await logAudit({
+		action: 'transaction.create',
+		entityType: 'transaction',
+		entityId: transactionRef.id,
+		amountCents: data.amountCents,
+		categoryId: data.categoryId,
+		createdBy: data.createdBy,
+		createdAt: new Date(),
+		meta: {
+			type: data.type,
+		},
+	});
 	return transactionRef.id;
 }
 
 /**
  * Delete a transaction and update summaries
  */
-export async function deleteTransaction(transactionId: string): Promise<void> {
+export async function deleteTransaction(transactionId: string, actorId?: string): Promise<void> {
 	const transactionDoc = await db.collection('transactions').doc(transactionId).get();
 	
 	if (!transactionDoc.exists) {
@@ -85,6 +98,21 @@ export async function deleteTransaction(transactionId: string): Promise<void> {
 	});
 
 	await batch.commit();
+	if (actorId) {
+		await logAudit({
+			action: 'transaction.delete',
+			entityType: 'transaction',
+			entityId: transactionId,
+			amountCents: data.amountCents,
+			categoryId: data.categoryId,
+			createdBy: actorId,
+			createdAt: new Date(),
+			meta: {
+				type: data.type,
+				originalCreatedBy: data.createdBy,
+			},
+		});
+	}
 }
 
 /**

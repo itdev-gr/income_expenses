@@ -75,6 +75,37 @@ export interface PaymentTotals {
 	onlineCents: number;
 }
 
+export interface AuditLog {
+	id: string;
+	action: string;
+	entityType: string;
+	entityId?: string;
+	amountCents?: number;
+	categoryId?: string;
+	createdBy: string;
+	createdAt: Date;
+	meta?: Record<string, unknown>;
+}
+
+export interface AuditLog {
+	id: string;
+	action: string;
+	entityType: string;
+	entityId?: string;
+	amountCents?: number;
+	categoryId?: string;
+	createdBy: string;
+	createdAt: Date;
+	meta?: Record<string, unknown>;
+}
+
+export interface WebhookError {
+	id: string;
+	payload: Record<string, unknown>;
+	error: string;
+	createdAt: Date;
+}
+
 export type RepeatFrequency = 'daily' | 'weekly' | 'monthly' | 'yearly';
 
 export interface RepeatablePayment {

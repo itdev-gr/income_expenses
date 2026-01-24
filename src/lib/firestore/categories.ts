@@ -1,5 +1,6 @@
 import { db } from '../firebaseAdmin';
 import type { Category } from '../types';
+import { logAudit } from './audit';
 
 /**
  * List all categories (active and inactive)
@@ -63,13 +64,23 @@ export async function listActiveCategoriesByType(transactionType: 'income' | 'ex
 /**
  * Create a new category
  */
-export async function createCategory(name: string): Promise<string> {
+export async function createCategory(name: string, actorId?: string): Promise<string> {
 	const categoryRef = db.collection('categories').doc();
 	await categoryRef.set({
 		name,
 		active: true,
 		createdAt: new Date(),
 	});
+	if (actorId) {
+		await logAudit({
+			action: 'category.create',
+			entityType: 'category',
+			entityId: categoryRef.id,
+			createdBy: actorId,
+			createdAt: new Date(),
+			meta: { name },
+		});
+	}
 	return categoryRef.id;
 }
 
@@ -101,7 +112,7 @@ export async function getOrCreatePaymentTypeCategory(name: 'Cash' | 'Online Paym
 /**
  * Toggle category active status
  */
-export async function toggleCategory(categoryId: string): Promise<void> {
+export async function toggleCategory(categoryId: string, actorId?: string): Promise<void> {
 	const categoryDoc = await db.collection('categories').doc(categoryId).get();
 	if (!categoryDoc.exists) {
 		throw new Error('Category not found');
@@ -110,12 +121,22 @@ export async function toggleCategory(categoryId: string): Promise<void> {
 	await db.collection('categories').doc(categoryId).update({
 		active: !currentActive,
 	});
+	if (actorId) {
+		await logAudit({
+			action: 'category.toggle',
+			entityType: 'category',
+			entityId: categoryId,
+			createdBy: actorId,
+			createdAt: new Date(),
+			meta: { active: !currentActive },
+		});
+	}
 }
 
 /**
  * Delete a category
  */
-export async function deleteCategory(categoryId: string): Promise<void> {
+export async function deleteCategory(categoryId: string, actorId?: string): Promise<void> {
 	const categoryDoc = await db.collection('categories').doc(categoryId).get();
 	if (!categoryDoc.exists) {
 		throw new Error('Category not found');
@@ -132,6 +153,16 @@ export async function deleteCategory(categoryId: string): Promise<void> {
 	}
 	
 	await db.collection('categories').doc(categoryId).delete();
+	if (actorId) {
+		await logAudit({
+			action: 'category.delete',
+			entityType: 'category',
+			entityId: categoryId,
+			createdBy: actorId,
+			createdAt: new Date(),
+			meta: { name: categoryDoc.data()?.name },
+		});
+	}
 }
 
 /**

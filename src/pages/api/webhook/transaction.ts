@@ -3,6 +3,14 @@ import { createTransaction } from '../../../lib/firestore/transactions';
 import { getOrCreatePaymentTypeCategory } from '../../../lib/firestore/categories';
 import { db } from '../../../lib/firebaseAdmin';
 
+async function logWebhookError(payload: unknown, error: string) {
+	await db.collection('webhook_errors').add({
+		payload,
+		error,
+		createdAt: new Date(),
+	});
+}
+
 export const POST: APIRoute = async ({ request }) => {
 	try {
 		// Parse request body
@@ -22,6 +30,7 @@ export const POST: APIRoute = async ({ request }) => {
 
 		// Validate required fields
 		if (!date || !type || amount === undefined || !categoryId || !createdBy) {
+			await logWebhookError(body, 'Missing required fields. Required: date, type, amount, categoryId, createdBy');
 			return new Response(JSON.stringify({ 
 				success: false,
 				error: 'Missing required fields. Required: date, type, amount, categoryId, createdBy' 
@@ -33,6 +42,7 @@ export const POST: APIRoute = async ({ request }) => {
 
 		// Validate type
 		if (type !== 'income' && type !== 'expense') {
+			await logWebhookError(body, 'Invalid type. Must be "income" or "expense"');
 			return new Response(JSON.stringify({ 
 				success: false,
 				error: 'Invalid type. Must be "income" or "expense"' 
@@ -52,6 +62,7 @@ export const POST: APIRoute = async ({ request }) => {
 				transactionDate = new Date(date);
 			}
 		} else {
+			await logWebhookError(body, 'Invalid date format. Use ISO date string or YYYY-MM-DD');
 			return new Response(JSON.stringify({ 
 				success: false,
 				error: 'Invalid date format. Use ISO date string or YYYY-MM-DD' 
@@ -62,6 +73,7 @@ export const POST: APIRoute = async ({ request }) => {
 		}
 
 		if (isNaN(transactionDate.getTime())) {
+			await logWebhookError(body, 'Invalid date format. Use ISO date string or YYYY-MM-DD');
 			return new Response(JSON.stringify({ 
 				success: false,
 				error: 'Invalid date format. Use ISO date string (e.g., "2026-01-22T13:18:08Z") or YYYY-MM-DD' 
@@ -74,6 +86,7 @@ export const POST: APIRoute = async ({ request }) => {
 		// Convert amount to cents
 		const amountCents = Math.round(parseFloat(amount) * 100);
 		if (amountCents <= 0 || isNaN(amountCents)) {
+			await logWebhookError(body, 'Amount must be a positive number');
 			return new Response(JSON.stringify({ 
 				success: false,
 				error: 'Amount must be a positive number' 
@@ -93,6 +106,7 @@ export const POST: APIRoute = async ({ request }) => {
 		// Verify category exists
 		const categoryDoc = await db.collection('categories').doc(finalCategoryId).get();
 		if (!categoryDoc.exists) {
+			await logWebhookError(body, `Category ID "${finalCategoryId}" does not exist`);
 			return new Response(JSON.stringify({ 
 				success: false,
 				error: `Category ID "${finalCategoryId}" does not exist. Please use a valid category ID or "cash"/"online"` 
@@ -125,6 +139,11 @@ export const POST: APIRoute = async ({ request }) => {
 
 	} catch (error: any) {
 		console.error('Webhook error:', error);
+		try {
+			await logWebhookError(null, error.message || 'Internal server error');
+		} catch {
+			// Avoid throwing from error logger
+		}
 		return new Response(JSON.stringify({ 
 			success: false,
 			error: error.message || 'Internal server error' 

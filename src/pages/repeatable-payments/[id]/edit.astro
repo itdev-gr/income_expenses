@@ -70,7 +70,7 @@ if (Astro.request.method === 'POST') {
 				updateData.note = note || null;
 				updateData.endDate = endDate || null;
 
-				await updateRepeatablePayment(id, updateData);
+				await updateRepeatablePayment(id, updateData, user.uid);
 				success = true;
 			}
 		} catch (err: any) {

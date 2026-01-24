@@ -1,10 +1,11 @@
 import { db } from '../firebaseAdmin';
 import type { RepeatablePayment, RepeatFrequency } from '../types';
+import { logAudit } from './audit';
 
 /**
  * Calculate next due date based on frequency
  */
-function calculateNextDueDate(lastDate: Date, frequency: RepeatFrequency): Date {
+export function calculateNextDueDate(lastDate: Date, frequency: RepeatFrequency): Date {
 	const next = new Date(lastDate);
 	switch (frequency) {
 		case 'daily':
@@ -63,6 +64,19 @@ export async function createRepeatablePayment(
 
 	const paymentRef = db.collection('repeatable_payments').doc();
 	await paymentRef.set(paymentData);
+	await logAudit({
+		action: 'repeatable.create',
+		entityType: 'repeatable_payment',
+		entityId: paymentRef.id,
+		amountCents: data.amountCents,
+		categoryId: data.categoryId,
+		createdBy: data.createdBy,
+		createdAt: new Date(),
+		meta: {
+			frequency: data.frequency,
+			type: data.type,
+		},
+	});
 	return paymentRef.id;
 }
 
@@ -116,7 +130,8 @@ export async function getRepeatablePayment(id: string): Promise<RepeatablePaymen
  */
 export async function updateRepeatablePayment(
 	id: string,
-	data: Partial<Omit<RepeatablePayment, 'id' | 'createdAt' | 'createdBy'>> & { nextDueDate?: Date }
+	data: Partial<Omit<RepeatablePayment, 'id' | 'createdAt' | 'createdBy'>> & { nextDueDate?: Date },
+	actorId?: string
 ): Promise<void> {
 	const doc = await db.collection('repeatable_payments').doc(id).get();
 	if (!doc.exists) {
@@ -161,23 +176,50 @@ export async function updateRepeatablePayment(
 	}
 
 	await db.collection('repeatable_payments').doc(id).update(updateData);
+	if (actorId) {
+		await logAudit({
+			action: 'repeatable.update',
+			entityType: 'repeatable_payment',
+			entityId: id,
+			amountCents: data.amountCents,
+			categoryId: data.categoryId,
+			createdBy: actorId,
+			createdAt: new Date(),
+			meta: {
+				frequency: data.frequency,
+				type: data.type,
+				active: data.active,
+			},
+		});
+	}
 }
 
 /**
  * Delete a repeatable payment
  */
-export async function deleteRepeatablePayment(id: string): Promise<void> {
+export async function deleteRepeatablePayment(id: string, actorId?: string): Promise<void> {
 	const doc = await db.collection('repeatable_payments').doc(id).get();
 	if (!doc.exists) {
 		throw new Error('Repeatable payment not found');
 	}
 	await db.collection('repeatable_payments').doc(id).delete();
+	if (actorId) {
+		await logAudit({
+			action: 'repeatable.delete',
+			entityType: 'repeatable_payment',
+			entityId: id,
+			amountCents: doc.data()?.amountCents,
+			categoryId: doc.data()?.categoryId,
+			createdBy: actorId,
+			createdAt: new Date(),
+		});
+	}
 }
 
 /**
  * Toggle active status of a repeatable payment
  */
-export async function toggleRepeatablePayment(id: string): Promise<void> {
+export async function toggleRepeatablePayment(id: string, actorId?: string): Promise<void> {
 	const doc = await db.collection('repeatable_payments').doc(id).get();
 	if (!doc.exists) {
 		throw new Error('Repeatable payment not found');
@@ -187,4 +229,16 @@ export async function toggleRepeatablePayment(id: string): Promise<void> {
 		active: !currentActive,
 		updatedAt: new Date(),
 	});
+	if (actorId) {
+		await logAudit({
+			action: 'repeatable.toggle',
+			entityType: 'repeatable_payment',
+			entityId: id,
+			amountCents: doc.data()?.amountCents,
+			categoryId: doc.data()?.categoryId,
+			createdBy: actorId,
+			createdAt: new Date(),
+			meta: { active: !currentActive },
+		});
+	}
 }

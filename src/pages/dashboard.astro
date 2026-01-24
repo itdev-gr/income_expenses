@@ -4,7 +4,7 @@ import KPIGrid from '../components/KPIGrid.astro';
 import LineChart from '../components/LineChart.astro';
 import { requireAdmin } from '../lib/auth';
 import { getDashboardData } from '../lib/firestore/summaries';
-import { formatDate, getToday, parseDateKey } from '../lib/dates';
+import { formatDate, getToday, parseDateKey, toMonthKey } from '../lib/dates';
 
 const user = await requireAdmin(Astro.request);
 
@@ -22,10 +22,22 @@ const dashboardData = await getDashboardData(fromDate, toDate);
 
 // Calculate days difference for display
 const daysDiff = Math.ceil((toDate.getTime() - fromDate.getTime()) / (1000 * 60 * 60 * 24));
+
+const currentMonthKey = toMonthKey(getToday());
 ---
 
 <Layout user={user} title="Dashboard - Company Ledger">
 	<h1 class="text-2xl font-bold text-gray-900 mb-6">Dashboard</h1>
+	{user.role === 'admin' && (
+		<div class="mb-4">
+			<a
+				href={`/api/reports/monthly.pdf?month=${currentMonthKey}`}
+				class="inline-flex items-center px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300"
+			>
+				Download Monthly PDF
+			</a>
+		</div>
+	)}
 
 	<div class="mb-6 bg-white rounded-lg shadow p-4">
 		<label class="block text-sm font-medium text-gray-700 mb-3">Chart Date Range</label>

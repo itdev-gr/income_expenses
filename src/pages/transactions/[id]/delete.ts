@@ -11,7 +11,7 @@ export const POST: APIRoute = async ({ params, request, redirect }) => {
 	}
 
 	try {
-		await deleteTransaction(id);
+		await deleteTransaction(id, user.uid);
 		return redirect('/transactions', 302);
 	} catch (error: any) {
 		return new Response(error.message || 'Failed to delete transaction', { status: 500 });

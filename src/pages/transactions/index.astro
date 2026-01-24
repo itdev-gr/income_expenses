@@ -78,12 +78,27 @@ for (const uid of userIds) {
 <Layout user={user} title="Transactions - Company Ledger">
 	<div class="flex justify-between items-center mb-6">
 		<h1 class="text-2xl font-bold text-gray-900">Transactions</h1>
-		<a
-			href="/transactions/new"
-			class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-		>
-			New Transaction
-		</a>
+		<div class="flex items-center space-x-2">
+			<a
+				href="/transactions/new"
+				class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+			>
+				New Transaction
+			</a>
+			{user.role === 'admin' && (
+				<a
+					href={`/api/exports/transactions.csv?${new URLSearchParams({
+						...(fromParam ? { from: fromParam } : {}),
+						...(toParam ? { to: toParam } : {}),
+						...(typeParam ? { type: typeParam } : {}),
+						...(categoryIdParam ? { categoryId: categoryIdParam } : {}),
+					}).toString()}`}
+					class="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300"
+				>
+					Export CSV
+				</a>
+			)}
+		</div>
 	</div>
 
 	<Filters 
