@@ -1,4 +1,4 @@
-import { formatInTimeZone, toZonedTime, zonedTimeToUtc } from 'date-fns-tz';
+import { formatInTimeZone, toZonedTime } from 'date-fns-tz';
 
 const TIMEZONE = 'Europe/Athens';
 
@@ -63,15 +63,9 @@ export function parseDateKey(dateKey: string): Date {
  * Get start/end of the day in Europe/Athens timezone
  */
 export function getDayRange(date: Date): { start: Date; end: Date } {
-	const key = toDateKey(date);
-	const zoned = parseDateKey(key);
-	const startLocal = new Date(zoned);
-	startLocal.setHours(0, 0, 0, 0);
-	const endLocal = new Date(zoned);
-	endLocal.setHours(23, 59, 59, 999);
 	return {
-		start: zonedTimeToUtc(startLocal, TIMEZONE),
-		end: zonedTimeToUtc(endLocal, TIMEZONE),
+		start: zonedBoundary(date, '00:00:00'),
+		end: zonedBoundary(date, '23:59:59.999'),
 	};
 }
 
@@ -84,13 +78,11 @@ export function getWeekRange(date: Date): { start: Date; end: Date } {
 	const diff = (day + 6) % 7; // days since Monday
 	const startLocal = new Date(zoned);
 	startLocal.setDate(zoned.getDate() - diff);
-	startLocal.setHours(0, 0, 0, 0);
 	const endLocal = new Date(startLocal);
 	endLocal.setDate(startLocal.getDate() + 6);
-	endLocal.setHours(23, 59, 59, 999);
 	return {
-		start: zonedTimeToUtc(startLocal, TIMEZONE),
-		end: zonedTimeToUtc(endLocal, TIMEZONE),
+		start: zonedBoundary(startLocal, '00:00:00'),
+		end: zonedBoundary(endLocal, '23:59:59.999'),
 	};
 }
 
@@ -100,11 +92,15 @@ export function getWeekRange(date: Date): { start: Date; end: Date } {
 export function getMonthRange(date: Date): { start: Date; end: Date } {
 	const zoned = toZonedTime(date, TIMEZONE);
 	const startLocal = new Date(zoned.getFullYear(), zoned.getMonth(), 1);
-	startLocal.setHours(0, 0, 0, 0);
 	const endLocal = new Date(zoned.getFullYear(), zoned.getMonth() + 1, 0);
-	endLocal.setHours(23, 59, 59, 999);
 	return {
-		start: zonedTimeToUtc(startLocal, TIMEZONE),
-		end: zonedTimeToUtc(endLocal, TIMEZONE),
+		start: zonedBoundary(startLocal, '00:00:00'),
+		end: zonedBoundary(endLocal, '23:59:59.999'),
 	};
+}
+
+function zonedBoundary(date: Date, time: string): Date {
+	const dateStr = formatInTimeZone(date, TIMEZONE, 'yyyy-MM-dd');
+	const offset = formatInTimeZone(date, TIMEZONE, 'xxx');
+	return new Date(`${dateStr}T${time}${offset}`);
 }
