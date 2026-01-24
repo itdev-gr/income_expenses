@@ -65,6 +65,14 @@ export interface DashboardData {
 	dailyChart: DailySummary[];
 	weeklyTable: WeeklySummary[];
 	monthlyTable: MonthlySummary[];
+	todayPayments: PaymentTotals;
+	weekPayments: PaymentTotals;
+	monthPayments: PaymentTotals;
+}
+
+export interface PaymentTotals {
+	cashCents: number;
+	onlineCents: number;
 }
 
 export type RepeatFrequency = 'daily' | 'weekly' | 'monthly' | 'yearly';

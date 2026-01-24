@@ -1,5 +1,5 @@
 import { db } from '../firebaseAdmin';
-import type { DailySummary, WeeklySummary, MonthlySummary } from '../types';
+import type { DailySummary, WeeklySummary, MonthlySummary, PaymentTotals } from '../types';
 import type { TransactionType } from '../types';
 import type { WriteBatch } from 'firebase-admin/firestore';
 
@@ -10,6 +10,54 @@ interface UpdateSummaryParams {
 	type: TransactionType;
 	amountCents: number;
 	operation: 'increment' | 'decrement';
+}
+
+async function getPaymentTypeIds(): Promise<{ cashId: string | null; onlineId: string | null }> {
+	const snapshot = await db.collection('categories')
+		.where('name', 'in', ['Cash', 'Online Payment'])
+		.get();
+
+	let cashId: string | null = null;
+	let onlineId: string | null = null;
+
+	for (const doc of snapshot.docs) {
+		const name = doc.data().name;
+		if (name === 'Cash') {
+			cashId = doc.id;
+		} else if (name === 'Online Payment') {
+			onlineId = doc.id;
+		}
+	}
+
+	return { cashId, onlineId };
+}
+
+async function getPaymentTypeTotals(fromDate: Date, toDate: Date): Promise<PaymentTotals> {
+	const { cashId, onlineId } = await getPaymentTypeIds();
+
+	if (!cashId && !onlineId) {
+		return { cashCents: 0, onlineCents: 0 };
+	}
+
+	const snapshot = await db.collection('transactions')
+		.where('ts', '>=', fromDate)
+		.where('ts', '<=', toDate)
+		.get();
+
+	let cashCents = 0;
+	let onlineCents = 0;
+
+	for (const doc of snapshot.docs) {
+		const data = doc.data();
+		if (cashId && data.categoryId === cashId) {
+			cashCents += data.amountCents || 0;
+		}
+		if (onlineId && data.categoryId === onlineId) {
+			onlineCents += data.amountCents || 0;
+		}
+	}
+
+	return { cashCents, onlineCents };
 }
 
 /**
@@ -145,9 +193,12 @@ export async function getDashboardData(fromDate?: Date, toDate?: Date): Promise<
 	dailyChart: DailySummary[];
 	weeklyTable: WeeklySummary[];
 	monthlyTable: MonthlySummary[];
+	todayPayments: PaymentTotals;
+	weekPayments: PaymentTotals;
+	monthPayments: PaymentTotals;
 }> {
 	const now = new Date();
-	const { toDateKey, toMonthKey, toISOWeekKey } = await import('../dates');
+	const { toDateKey, toMonthKey, toISOWeekKey, getDayRange, getWeekRange, getMonthRange } = await import('../dates');
 	
 	const todayKey = toDateKey(now);
 	const weekKey = toISOWeekKey(now);
@@ -176,6 +227,17 @@ export async function getDashboardData(fromDate?: Date, toDate?: Date): Promise<
 		...monthDoc.data(),
 		updatedAt: monthDoc.data()!.updatedAt.toDate(),
 	} as MonthlySummary : null;
+
+	// Payment type totals (Cash/Online) for day/week/month
+	const { start: dayStart, end: dayEnd } = getDayRange(now);
+	const { start: weekStart, end: weekEnd } = getWeekRange(now);
+	const { start: monthStart, end: monthEnd } = getMonthRange(now);
+
+	const [todayPayments, weekPayments, monthPayments] = await Promise.all([
+		getPaymentTypeTotals(dayStart, dayEnd),
+		getPaymentTypeTotals(weekStart, weekEnd),
+		getPaymentTypeTotals(monthStart, monthEnd),
+	]);
 
 	// Get daily chart data based on date range
 	const chartFromDate = fromDate || (() => {
@@ -231,5 +293,8 @@ export async function getDashboardData(fromDate?: Date, toDate?: Date): Promise<
 		dailyChart,
 		weeklyTable,
 		monthlyTable,
+		todayPayments,
+		weekPayments,
+		monthPayments,
 	};
 }

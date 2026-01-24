@@ -1,4 +1,4 @@
-import { formatInTimeZone, toZonedTime } from 'date-fns-tz';
+import { formatInTimeZone, toZonedTime, zonedTimeToUtc } from 'date-fns-tz';
 
 const TIMEZONE = 'Europe/Athens';
 
@@ -57,4 +57,54 @@ export function formatDate(date: Date, format: string = 'yyyy-MM-dd'): string {
 export function parseDateKey(dateKey: string): Date {
 	const [year, month, day] = dateKey.split('-').map(Number);
 	return toZonedTime(new Date(year, month - 1, day), TIMEZONE);
+}
+
+/**
+ * Get start/end of the day in Europe/Athens timezone
+ */
+export function getDayRange(date: Date): { start: Date; end: Date } {
+	const key = toDateKey(date);
+	const zoned = parseDateKey(key);
+	const startLocal = new Date(zoned);
+	startLocal.setHours(0, 0, 0, 0);
+	const endLocal = new Date(zoned);
+	endLocal.setHours(23, 59, 59, 999);
+	return {
+		start: zonedTimeToUtc(startLocal, TIMEZONE),
+		end: zonedTimeToUtc(endLocal, TIMEZONE),
+	};
+}
+
+/**
+ * Get start/end of the ISO week (Mon-Sun) in Europe/Athens timezone
+ */
+export function getWeekRange(date: Date): { start: Date; end: Date } {
+	const zoned = toZonedTime(date, TIMEZONE);
+	const day = zoned.getDay(); // 0 (Sun) - 6 (Sat)
+	const diff = (day + 6) % 7; // days since Monday
+	const startLocal = new Date(zoned);
+	startLocal.setDate(zoned.getDate() - diff);
+	startLocal.setHours(0, 0, 0, 0);
+	const endLocal = new Date(startLocal);
+	endLocal.setDate(startLocal.getDate() + 6);
+	endLocal.setHours(23, 59, 59, 999);
+	return {
+		start: zonedTimeToUtc(startLocal, TIMEZONE),
+		end: zonedTimeToUtc(endLocal, TIMEZONE),
+	};
+}
+
+/**
+ * Get start/end of the month in Europe/Athens timezone
+ */
+export function getMonthRange(date: Date): { start: Date; end: Date } {
+	const zoned = toZonedTime(date, TIMEZONE);
+	const startLocal = new Date(zoned.getFullYear(), zoned.getMonth(), 1);
+	startLocal.setHours(0, 0, 0, 0);
+	const endLocal = new Date(zoned.getFullYear(), zoned.getMonth() + 1, 0);
+	endLocal.setHours(23, 59, 59, 999);
+	return {
+		start: zonedTimeToUtc(startLocal, TIMEZONE),
+		end: zonedTimeToUtc(endLocal, TIMEZONE),
+	};
 }
