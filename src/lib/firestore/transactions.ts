@@ -95,6 +95,7 @@ export async function listTransactions(options: {
 	toDate?: Date;
 	type?: TransactionType;
 	categoryId?: string;
+	createdBy?: string;
 	limit?: number;
 	offset?: number;
 }): Promise<{ transactions: Transaction[]; total: number }> {
@@ -111,6 +112,9 @@ export async function listTransactions(options: {
 	}
 	if (options.categoryId) {
 		query = query.where('categoryId', '==', options.categoryId);
+	}
+	if (options.createdBy) {
+		query = query.where('createdBy', '==', options.createdBy);
 	}
 
 	query = query.orderBy('ts', 'desc');

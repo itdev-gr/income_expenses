@@ -33,6 +33,7 @@ const { transactions: allTransactions, total } = await listTransactions({
 	toDate,
 	type,
 	categoryId,
+	createdBy: user.role === 'staff' ? user.uid : undefined,
 	limit: 1000, // Fetch more to filter client-side
 	offset: 0,
 });

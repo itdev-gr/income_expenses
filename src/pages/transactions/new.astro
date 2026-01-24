@@ -73,6 +73,7 @@ const todayKey = toDateKey(today);
 const { transactions: todayTransactions } = await listTransactions({
 	fromDate: new Date(todayKey + 'T00:00:00'),
 	toDate: new Date(todayKey + 'T23:59:59'),
+	createdBy: user.role === 'staff' ? user.uid : undefined,
 	limit: 50,
 });
 

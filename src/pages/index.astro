@@ -4,7 +4,7 @@ import { getUserFromRequest } from '../lib/auth';
 const user = await getUserFromRequest(Astro.request);
 
 if (user) {
-	return Astro.redirect('/dashboard');
+	return Astro.redirect(user.role === 'admin' ? '/dashboard' : '/transactions');
 } else {
 	return Astro.redirect('/login');
 }

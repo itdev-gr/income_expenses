@@ -2,11 +2,11 @@
 import Layout from '../components/Layout.astro';
 import KPIGrid from '../components/KPIGrid.astro';
 import LineChart from '../components/LineChart.astro';
-import { requireUser } from '../lib/auth';
+import { requireAdmin } from '../lib/auth';
 import { getDashboardData } from '../lib/firestore/summaries';
 import { formatDate, getToday, parseDateKey } from '../lib/dates';
 
-const user = await requireUser(Astro.request);
+const user = await requireAdmin(Astro.request);
 
 // Parse date range from URL params
 const fromParam = Astro.url.searchParams.get('from');
