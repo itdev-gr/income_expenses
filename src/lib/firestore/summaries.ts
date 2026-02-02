@@ -32,32 +32,118 @@ async function getPaymentTypeIds(): Promise<{ cashId: string | null; onlineId: s
 	return { cashId, onlineId };
 }
 
-async function getPaymentTypeTotals(fromDate: Date, toDate: Date): Promise<PaymentTotals> {
-	const { cashId, onlineId } = await getPaymentTypeIds();
+/** Transaction-like shape for aggregation (ts may be Firestore Timestamp or Date) */
+interface TransactionRow {
+	ts: Date | { toDate(): Date };
+	type: TransactionType;
+	amountCents: number;
+	categoryId?: string;
+}
 
-	if (!cashId && !onlineId) {
-		return { cashCents: 0, onlineCents: 0 };
-	}
+function tsToDate(ts: Date | { toDate(): Date }): Date {
+	return typeof (ts as { toDate?: () => Date }).toDate === 'function'
+		? (ts as { toDate(): Date }).toDate()
+		: (ts as Date);
+}
 
-	const snapshot = await db.collection('transactions')
-		.where('ts', '>=', fromDate)
-		.where('ts', '<=', toDate)
-		.get();
-
+/**
+ * Pure aggregation: Income/Expense/Net from Cash+Online only; Cash/Online = income only.
+ */
+function computeIncomeExpenseCashOnline(
+	transactions: TransactionRow[],
+	cashId: string | null,
+	onlineId: string | null
+): {
+	incomeCents: number;
+	expenseCents: number;
+	netCents: number;
+	cashCents: number;
+	onlineCents: number;
+} {
+	let incomeCents = 0;
+	let expenseCents = 0;
 	let cashCents = 0;
 	let onlineCents = 0;
-
-	for (const doc of snapshot.docs) {
-		const data = doc.data();
-		if (cashId && data.categoryId === cashId) {
-			cashCents += data.amountCents || 0;
-		}
-		if (onlineId && data.categoryId === onlineId) {
-			onlineCents += data.amountCents || 0;
+	const cashOrOnline = (id: string | undefined) =>
+		id === cashId || id === onlineId;
+	for (const t of transactions) {
+		const cat = t.categoryId;
+		if (!cashOrOnline(cat)) continue;
+		const amount = t.amountCents || 0;
+		if (t.type === 'income') {
+			incomeCents += amount;
+			if (cat === cashId) cashCents += amount;
+			if (cat === onlineId) onlineCents += amount;
+		} else if (t.type === 'expense') {
+			expenseCents += amount;
 		}
 	}
+	return {
+		incomeCents,
+		expenseCents,
+		netCents: incomeCents - expenseCents,
+		cashCents,
+		onlineCents,
+	};
+}
 
+const TRANSACTIONS_QUERY_LIMIT = 5000;
+
+async function getTransactionsInRange(
+	fromDate: Date,
+	toDate: Date
+): Promise<TransactionRow[]> {
+	const snapshot = await db
+		.collection('transactions')
+		.where('ts', '>=', fromDate)
+		.where('ts', '<=', toDate)
+		.orderBy('ts')
+		.limit(TRANSACTIONS_QUERY_LIMIT)
+		.get();
+	return snapshot.docs.map((doc) => {
+		const d = doc.data();
+		return {
+			ts: d.ts,
+			type: d.type as TransactionType,
+			amountCents: d.amountCents ?? 0,
+			categoryId: d.categoryId,
+		};
+	});
+}
+
+async function getPaymentTypeTotals(fromDate: Date, toDate: Date): Promise<PaymentTotals> {
+	const { cashId, onlineId } = await getPaymentTypeIds();
+	if (!cashId && !onlineId) return { cashCents: 0, onlineCents: 0 };
+	const rows = await getTransactionsInRange(fromDate, toDate);
+	const filtered = rows.filter(
+		(t) => t.categoryId === cashId || t.categoryId === onlineId
+	);
+	const { cashCents, onlineCents } = computeIncomeExpenseCashOnline(
+		filtered,
+		cashId,
+		onlineId
+	);
 	return { cashCents, onlineCents };
+}
+
+export interface ComputedPeriodSummary {
+	incomeCents: number;
+	expenseCents: number;
+	netCents: number;
+	cashCents: number;
+	onlineCents: number;
+}
+
+export async function getComputedPeriodSummary(
+	fromDate: Date,
+	toDate: Date
+): Promise<ComputedPeriodSummary> {
+	const { cashId, onlineId } = await getPaymentTypeIds();
+	const rows = await getTransactionsInRange(fromDate, toDate);
+	const filtered = rows.filter(
+		(t) => t.categoryId === cashId || t.categoryId === onlineId
+	);
+	return computeIncomeExpenseCashOnline(filtered, cashId, onlineId);
 }
 
 /**
@@ -184,7 +270,8 @@ export async function updateSummaries(
 }
 
 /**
- * Get dashboard data (today, week, month, charts, tables)
+ * Get dashboard data (today, week, month, charts, tables) computed from transactions
+ * (Cash+Online only: Income/Expense/Net; Cash/Online = income only).
  */
 export async function getDashboardData(fromDate?: Date, toDate?: Date): Promise<{
 	today: DailySummary | null;
@@ -199,92 +286,131 @@ export async function getDashboardData(fromDate?: Date, toDate?: Date): Promise<
 }> {
 	const now = new Date();
 	const { toDateKey, toMonthKey, toISOWeekKey, getDayRange, getWeekRange, getMonthRange } = await import('../dates');
-	
+	const { cashId, onlineId } = await getPaymentTypeIds();
+
 	const todayKey = toDateKey(now);
 	const weekKey = toISOWeekKey(now);
 	const monthKey = toMonthKey(now);
-
-	// Get today's summary
-	const todayDoc = await db.collection('stats_daily').doc(todayKey).get();
-	const today = todayDoc.exists ? {
-		dateKey: todayDoc.id,
-		...todayDoc.data(),
-		updatedAt: todayDoc.data()!.updatedAt.toDate(),
-	} as DailySummary : null;
-
-	// Get current week summary
-	const weekDoc = await db.collection('stats_weekly').doc(weekKey).get();
-	const week = weekDoc.exists ? {
-		weekKey: weekDoc.id,
-		...weekDoc.data(),
-		updatedAt: weekDoc.data()!.updatedAt.toDate(),
-	} as WeeklySummary : null;
-
-	// Get current month summary
-	const monthDoc = await db.collection('stats_monthly').doc(monthKey).get();
-	const month = monthDoc.exists ? {
-		monthKey: monthDoc.id,
-		...monthDoc.data(),
-		updatedAt: monthDoc.data()!.updatedAt.toDate(),
-	} as MonthlySummary : null;
-
-	// Payment type totals (Cash/Online) for day/week/month
 	const { start: dayStart, end: dayEnd } = getDayRange(now);
 	const { start: weekStart, end: weekEnd } = getWeekRange(now);
 	const { start: monthStart, end: monthEnd } = getMonthRange(now);
 
-	const [todayPayments, weekPayments, monthPayments] = await Promise.all([
-		getPaymentTypeTotals(dayStart, dayEnd),
-		getPaymentTypeTotals(weekStart, weekEnd),
-		getPaymentTypeTotals(monthStart, monthEnd),
+	const [daySummary, weekSummary, monthSummary] = await Promise.all([
+		getComputedPeriodSummary(dayStart, dayEnd),
+		getComputedPeriodSummary(weekStart, weekEnd),
+		getComputedPeriodSummary(monthStart, monthEnd),
 	]);
 
-	// Get daily chart data based on date range
-	const chartFromDate = fromDate || (() => {
-		const defaultStart = new Date(now);
-		defaultStart.setDate(defaultStart.getDate() - 30);
-		return defaultStart;
+	const today: DailySummary | null = {
+		dateKey: todayKey,
+		incomeCents: daySummary.incomeCents,
+		expenseCents: daySummary.expenseCents,
+		netCents: daySummary.netCents,
+		countIncome: 0,
+		countExpense: 0,
+		updatedAt: now,
+	};
+	const week: WeeklySummary | null = {
+		weekKey,
+		incomeCents: weekSummary.incomeCents,
+		expenseCents: weekSummary.expenseCents,
+		netCents: weekSummary.netCents,
+		countIncome: 0,
+		countExpense: 0,
+		updatedAt: now,
+	};
+	const month: MonthlySummary | null = {
+		monthKey,
+		incomeCents: monthSummary.incomeCents,
+		expenseCents: monthSummary.expenseCents,
+		netCents: monthSummary.netCents,
+		countIncome: 0,
+		countExpense: 0,
+		updatedAt: now,
+	};
+	const todayPayments: PaymentTotals = { cashCents: daySummary.cashCents, onlineCents: daySummary.onlineCents };
+	const weekPayments: PaymentTotals = { cashCents: weekSummary.cashCents, onlineCents: weekSummary.onlineCents };
+	const monthPayments: PaymentTotals = { cashCents: monthSummary.cashCents, onlineCents: monthSummary.onlineCents };
+
+	const chartFromDate = fromDate ?? (() => {
+		const d = new Date(now);
+		d.setDate(d.getDate() - 30);
+		return d;
 	})();
-	const chartToDate = toDate || now;
-	const startKey = toDateKey(chartFromDate);
-	const endKey = toDateKey(chartToDate);
-	
-	// Fetch all daily summaries and filter by date range in memory
-	// This avoids Firestore index requirements
-	const dailySnapshot = await db.collection('stats_daily').get();
-	
-	const dailyChart = dailySnapshot.docs
-		.map(doc => ({
-			dateKey: doc.id,
-			...doc.data(),
-			updatedAt: doc.data().updatedAt.toDate(),
-		} as DailySummary))
-		.filter(summary => summary.dateKey >= startKey && summary.dateKey <= endKey)
+	const chartToDate = toDate ?? now;
+	const chartRows = await getTransactionsInRange(chartFromDate, chartToDate);
+	const byDay = new Map<string, TransactionRow[]>();
+	for (const t of chartRows) {
+		const key = toDateKey(tsToDate(t.ts));
+		if (!byDay.has(key)) byDay.set(key, []);
+		byDay.get(key)!.push(t);
+	}
+	const dailyChart: DailySummary[] = Array.from(byDay.entries())
+		.map(([dateKey, rows]) => {
+			const s = computeIncomeExpenseCashOnline(rows, cashId, onlineId);
+			return {
+				dateKey,
+				incomeCents: s.incomeCents,
+				expenseCents: s.expenseCents,
+				netCents: s.netCents,
+				countIncome: 0,
+				countExpense: 0,
+				updatedAt: now,
+			};
+		})
 		.sort((a, b) => a.dateKey.localeCompare(b.dateKey));
 
-	// Get weekly table (last 8 weeks)
-	const weeklySnapshot = await db.collection('stats_weekly')
-		.orderBy('weekKey', 'desc')
-		.limit(8)
-		.get();
-	
-	const weeklyTable = weeklySnapshot.docs.map(doc => ({
-		weekKey: doc.id,
-		...doc.data(),
-		updatedAt: doc.data().updatedAt.toDate(),
-	} as WeeklySummary));
+	const eightWeeksAgo = new Date(now);
+	eightWeeksAgo.setDate(eightWeeksAgo.getDate() - 8 * 7);
+	const { start: weeklyRangeStart } = getWeekRange(eightWeeksAgo);
+	const weeklyRows = await getTransactionsInRange(weeklyRangeStart, weekEnd);
+	const byWeek = new Map<string, TransactionRow[]>();
+	for (const t of weeklyRows) {
+		const key = toISOWeekKey(tsToDate(t.ts));
+		if (!byWeek.has(key)) byWeek.set(key, []);
+		byWeek.get(key)!.push(t);
+	}
+	const weeklyTable: WeeklySummary[] = Array.from(byWeek.entries())
+		.map(([weekKey, rows]) => {
+			const s = computeIncomeExpenseCashOnline(rows, cashId, onlineId);
+			return {
+				weekKey,
+				incomeCents: s.incomeCents,
+				expenseCents: s.expenseCents,
+				netCents: s.netCents,
+				countIncome: 0,
+				countExpense: 0,
+				updatedAt: now,
+			};
+		})
+		.sort((a, b) => b.weekKey.localeCompare(a.weekKey))
+		.slice(0, 8);
 
-	// Get monthly table (last 12 months)
-	const monthlySnapshot = await db.collection('stats_monthly')
-		.orderBy('monthKey', 'desc')
-		.limit(12)
-		.get();
-	
-	const monthlyTable = monthlySnapshot.docs.map(doc => ({
-		monthKey: doc.id,
-		...doc.data(),
-		updatedAt: doc.data().updatedAt.toDate(),
-	} as MonthlySummary));
+	const twelveMonthsAgo = new Date(now);
+	twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
+	const { start: monthlyRangeStart } = getMonthRange(twelveMonthsAgo);
+	const monthlyRows = await getTransactionsInRange(monthlyRangeStart, monthEnd);
+	const byMonth = new Map<string, TransactionRow[]>();
+	for (const t of monthlyRows) {
+		const key = toMonthKey(tsToDate(t.ts));
+		if (!byMonth.has(key)) byMonth.set(key, []);
+		byMonth.get(key)!.push(t);
+	}
+	const monthlyTable: MonthlySummary[] = Array.from(byMonth.entries())
+		.map(([monthKey, rows]) => {
+			const s = computeIncomeExpenseCashOnline(rows, cashId, onlineId);
+			return {
+				monthKey,
+				incomeCents: s.incomeCents,
+				expenseCents: s.expenseCents,
+				netCents: s.netCents,
+				countIncome: 0,
+				countExpense: 0,
+				updatedAt: now,
+			};
+		})
+		.sort((a, b) => b.monthKey.localeCompare(a.monthKey))
+		.slice(0, 12);
 
 	return {
 		today,
@@ -297,4 +423,68 @@ export async function getDashboardData(fromDate?: Date, toDate?: Date): Promise<
 		weekPayments,
 		monthPayments,
 	};
+}
+
+export async function getComputedWeeklyTable(): Promise<WeeklySummary[]> {
+	const now = new Date();
+	const { toISOWeekKey, getWeekRange } = await import('../dates');
+	const { start: weekStart, end: weekEnd } = getWeekRange(now);
+	const eightWeeksAgo = new Date(now);
+	eightWeeksAgo.setDate(eightWeeksAgo.getDate() - 8 * 7);
+	const { start: rangeStart } = getWeekRange(eightWeeksAgo);
+	const rows = await getTransactionsInRange(rangeStart, weekEnd);
+	const { cashId, onlineId } = await getPaymentTypeIds();
+	const byWeek = new Map<string, TransactionRow[]>();
+	for (const t of rows) {
+		const key = toISOWeekKey(tsToDate(t.ts));
+		if (!byWeek.has(key)) byWeek.set(key, []);
+		byWeek.get(key)!.push(t);
+	}
+	return Array.from(byWeek.entries())
+		.map(([weekKey, list]) => {
+			const s = computeIncomeExpenseCashOnline(list, cashId, onlineId);
+			return {
+				weekKey,
+				incomeCents: s.incomeCents,
+				expenseCents: s.expenseCents,
+				netCents: s.netCents,
+				countIncome: 0,
+				countExpense: 0,
+				updatedAt: now,
+			};
+		})
+		.sort((a, b) => b.weekKey.localeCompare(a.weekKey))
+		.slice(0, 8);
+}
+
+export async function getComputedMonthlyTable(): Promise<MonthlySummary[]> {
+	const now = new Date();
+	const { toMonthKey, getMonthRange } = await import('../dates');
+	const { end: monthEnd } = getMonthRange(now);
+	const twelveMonthsAgo = new Date(now);
+	twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
+	const { start: rangeStart } = getMonthRange(twelveMonthsAgo);
+	const rows = await getTransactionsInRange(rangeStart, monthEnd);
+	const { cashId, onlineId } = await getPaymentTypeIds();
+	const byMonth = new Map<string, TransactionRow[]>();
+	for (const t of rows) {
+		const key = toMonthKey(tsToDate(t.ts));
+		if (!byMonth.has(key)) byMonth.set(key, []);
+		byMonth.get(key)!.push(t);
+	}
+	return Array.from(byMonth.entries())
+		.map(([monthKey, list]) => {
+			const s = computeIncomeExpenseCashOnline(list, cashId, onlineId);
+			return {
+				monthKey,
+				incomeCents: s.incomeCents,
+				expenseCents: s.expenseCents,
+				netCents: s.netCents,
+				countIncome: 0,
+				countExpense: 0,
+				updatedAt: now,
+			};
+		})
+		.sort((a, b) => b.monthKey.localeCompare(a.monthKey))
+		.slice(0, 12);
 }

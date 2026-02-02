@@ -2,11 +2,13 @@
 import Layout from '../../components/Layout.astro';
 import TransactionTable from '../../components/TransactionTable.astro';
 import Filters from '../../components/Filters.astro';
+import KPIGrid from '../../components/KPIGrid.astro';
 import { requireUser } from '../../lib/auth';
 import { listTransactions } from '../../lib/firestore/transactions';
 import { listCategories } from '../../lib/firestore/categories';
+import { getComputedPeriodSummary } from '../../lib/firestore/summaries';
 import { auth } from '../../lib/firebaseAdmin';
-import { parseDateKey } from '../../lib/dates';
+import { parseDateKey, formatDate, getDayRange } from '../../lib/dates';
 import type { TransactionType } from '../../lib/types';
 
 const user = await requireUser(Astro.request);
@@ -73,6 +75,13 @@ for (const uid of userIds) {
 		userEmails.set(uid, uid);
 	}
 }
+
+// Period summary when user has selected From and To
+let periodSummary: Awaited<ReturnType<typeof getComputedPeriodSummary>> | null = null;
+if (fromDate && toDate) {
+	const periodEnd = getDayRange(toDate).end;
+	periodSummary = await getComputedPeriodSummary(fromDate, periodEnd);
+}
 ---
 
 <Layout user={user} title="Transactions - Company Ledger">
@@ -110,6 +119,20 @@ for (const uid of userIds) {
 		defaultClickupId={clickupIdParam || undefined}
 		defaultCompanyName={companyNameParam || undefined}
 	/>
+
+	{fromParam && toParam && periodSummary && (
+		<KPIGrid 
+			title={`Period summary (${formatDate(fromDate!)} to ${formatDate(toDate!)})`}
+			data={{
+				label: 'Period',
+				income: periodSummary.incomeCents,
+				expense: periodSummary.expenseCents,
+				net: periodSummary.netCents,
+				cash: periodSummary.cashCents,
+				online: periodSummary.onlineCents,
+			}}
+		/>
+	)}
 
 	<TransactionTable 
 		transactions={transactions}

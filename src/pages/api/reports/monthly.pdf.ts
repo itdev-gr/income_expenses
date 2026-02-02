@@ -1,8 +1,8 @@
 import type { APIRoute } from 'astro';
 import PDFDocument from 'pdfkit';
 import { requireAdmin } from '../../../lib/auth';
-import { db } from '../../../lib/firebaseAdmin';
-import { formatDate, parseDateKey } from '../../../lib/dates';
+import { getComputedPeriodSummary, getComputedWeeklyTable, getComputedMonthlyTable } from '../../../lib/firestore/summaries';
+import { formatDate, parseDateKey, getMonthRange } from '../../../lib/dates';
 
 export const GET: APIRoute = async ({ request }) => {
 	await requireAdmin(request);
@@ -15,18 +15,10 @@ export const GET: APIRoute = async ({ request }) => {
 	}
 
 	const monthStart = parseDateKey(`${month}-01`);
-	const monthDoc = await db.collection('stats_monthly').doc(month).get();
-	const monthData = monthDoc.exists ? monthDoc.data() : null;
-
-	const weeklySnapshot = await db.collection('stats_weekly')
-		.orderBy('weekKey', 'desc')
-		.limit(8)
-		.get();
-
-	const monthlySnapshot = await db.collection('stats_monthly')
-		.orderBy('monthKey', 'desc')
-		.limit(12)
-		.get();
+	const { end: monthEnd } = getMonthRange(monthStart);
+	const monthData = await getComputedPeriodSummary(monthStart, monthEnd);
+	const weeklyTable = await getComputedWeeklyTable();
+	const monthlyTable = await getComputedMonthlyTable();
 
 	const doc = new PDFDocument({ margin: 40 });
 
@@ -40,31 +32,25 @@ export const GET: APIRoute = async ({ request }) => {
 
 	doc.fontSize(14).text('Monthly KPIs');
 	doc.moveDown(0.5);
-	if (monthData) {
-		doc.fontSize(11).text(`Income: €${((monthData.incomeCents || 0) / 100).toFixed(2)}`);
-		doc.fontSize(11).text(`Expense: €${((monthData.expenseCents || 0) / 100).toFixed(2)}`);
-		doc.fontSize(11).text(`Net: €${((monthData.netCents || 0) / 100).toFixed(2)}`);
-	} else {
-		doc.fontSize(11).text('No data available for this month.');
-	}
+	doc.fontSize(11).text(`Income: €${(monthData.incomeCents / 100).toFixed(2)}`);
+	doc.fontSize(11).text(`Expense: €${(monthData.expenseCents / 100).toFixed(2)}`);
+	doc.fontSize(11).text(`Net: €${(monthData.netCents / 100).toFixed(2)}`);
 
 	doc.moveDown();
 	doc.fontSize(14).text('Weekly Summary (Last 8 Weeks)');
 	doc.moveDown(0.5);
-	weeklySnapshot.docs.forEach(weekDoc => {
-		const data = weekDoc.data();
+	weeklyTable.forEach(week => {
 		doc.fontSize(10).text(
-			`${weekDoc.id} | Income: €${((data.incomeCents || 0) / 100).toFixed(2)} | Expense: €${((data.expenseCents || 0) / 100).toFixed(2)} | Net: €${((data.netCents || 0) / 100).toFixed(2)}`
+			`${week.weekKey} | Income: €${((week.incomeCents || 0) / 100).toFixed(2)} | Expense: €${((week.expenseCents || 0) / 100).toFixed(2)} | Net: €${((week.netCents || 0) / 100).toFixed(2)}`
 		);
 	});
 
 	doc.moveDown();
 	doc.fontSize(14).text('Monthly Summary (Last 12 Months)');
 	doc.moveDown(0.5);
-	monthlySnapshot.docs.forEach(mDoc => {
-		const data = mDoc.data();
+	monthlyTable.forEach(m => {
 		doc.fontSize(10).text(
-			`${mDoc.id} | Income: €${((data.incomeCents || 0) / 100).toFixed(2)} | Expense: €${((data.expenseCents || 0) / 100).toFixed(2)} | Net: €${((data.netCents || 0) / 100).toFixed(2)}`
+			`${m.monthKey} | Income: €${((m.incomeCents || 0) / 100).toFixed(2)} | Expense: €${((m.expenseCents || 0) / 100).toFixed(2)} | Net: €${((m.netCents || 0) / 100).toFixed(2)}`
 		);
 	});
 

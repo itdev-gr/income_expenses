@@ -1,28 +1,13 @@
 ---
 import Layout from '../components/Layout.astro';
 import KPIGrid from '../components/KPIGrid.astro';
-import LineChart from '../components/LineChart.astro';
 import { requireAdmin } from '../lib/auth';
 import { getDashboardData } from '../lib/firestore/summaries';
-import { formatDate, getToday, parseDateKey, toMonthKey } from '../lib/dates';
+import { getToday, toMonthKey } from '../lib/dates';
 
 const user = await requireAdmin(Astro.request);
 
-// Parse date range from URL params
-const fromParam = Astro.url.searchParams.get('from');
-const toParam = Astro.url.searchParams.get('to');
-
-// Default to today for both dates if no dates provided
-const today = getToday();
-
-const fromDate = fromParam ? parseDateKey(fromParam) : today;
-const toDate = toParam ? parseDateKey(toParam) : today;
-
-const dashboardData = await getDashboardData(fromDate, toDate);
-
-// Calculate days difference for display
-const daysDiff = Math.ceil((toDate.getTime() - fromDate.getTime()) / (1000 * 60 * 60 * 24));
-
+const dashboardData = await getDashboardData();
 const currentMonthKey = toMonthKey(getToday());
 ---
 
@@ -38,44 +23,6 @@ const currentMonthKey = toMonthKey(getToday());
 			</a>
 		</div>
 	)}
-
-	<div class="mb-6 bg-white rounded-lg shadow p-4">
-		<label class="block text-sm font-medium text-gray-700 mb-3">Chart Date Range</label>
-		<form method="GET" action="/dashboard" class="flex flex-wrap items-end gap-4">
-			<div>
-				<label for="from" class="block text-xs text-gray-600 mb-1">From Date</label>
-				<input
-					type="date"
-					id="from"
-					name="from"
-					value={formatDate(fromDate)}
-					class="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-				/>
-			</div>
-			<div>
-				<label for="to" class="block text-xs text-gray-600 mb-1">To Date</label>
-				<input
-					type="date"
-					id="to"
-					name="to"
-					value={formatDate(toDate)}
-					class="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-				/>
-			</div>
-			<button
-				type="submit"
-				class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-			>
-				Update Chart
-			</button>
-			<a
-				href="/dashboard"
-				class="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300"
-			>
-				Reset
-			</a>
-		</form>
-	</div>
 
 	<KPIGrid 
 		title="Today" 
@@ -112,8 +59,6 @@ const currentMonthKey = toMonthKey(getToday());
 			online: dashboardData.monthPayments.onlineCents,
 		} : null}
 	/>
-
-	<LineChart data={dashboardData.dailyChart} title={`Daily Trends (${formatDate(fromDate)} to ${formatDate(toDate)})`} />
 
 	<div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
 		<div class="bg-white rounded-lg shadow p-6">
