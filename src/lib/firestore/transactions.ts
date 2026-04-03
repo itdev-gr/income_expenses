@@ -116,6 +116,85 @@ export async function deleteTransaction(transactionId: string, actorId?: string)
 }
 
 /**
+ * Update an existing transaction and recalculate summaries
+ */
+export async function updateTransaction(
+	transactionId: string,
+	data: Partial<Omit<Transaction, 'id' | 'createdAt' | 'createdBy'>>,
+	actorId: string
+): Promise<void> {
+	const existingDoc = await db.collection('transactions').doc(transactionId).get();
+
+	if (!existingDoc.exists) {
+		throw new Error('Transaction not found');
+	}
+
+	const oldData = existingDoc.data()!;
+	const oldDate = oldData.ts.toDate();
+	const oldDateKey = toDateKey(oldDate);
+	const oldWeekKey = toISOWeekKey(oldDate);
+	const oldMonthKey = toMonthKey(oldDate);
+
+	const newDate = data.ts ?? oldDate;
+	const newType = data.type ?? oldData.type;
+	const newAmountCents = data.amountCents ?? oldData.amountCents;
+	const newDateKey = toDateKey(newDate);
+	const newWeekKey = toISOWeekKey(newDate);
+	const newMonthKey = toMonthKey(newDate);
+
+	const batch = db.batch();
+
+	// Reverse old summaries
+	await updateSummaries(batch, {
+		dateKey: oldDateKey,
+		weekKey: oldWeekKey,
+		monthKey: oldMonthKey,
+		type: oldData.type,
+		amountCents: oldData.amountCents,
+		operation: 'decrement',
+	});
+
+	// Build update payload
+	const updateData: Record<string, unknown> = {};
+	if (data.ts !== undefined) updateData.ts = data.ts;
+	if (data.type !== undefined) updateData.type = data.type;
+	if (data.amountCents !== undefined) updateData.amountCents = data.amountCents;
+	if (data.categoryId !== undefined) updateData.categoryId = data.categoryId;
+	if (data.note !== undefined) updateData.note = data.note;
+	if (data.clickupId !== undefined) updateData.clickupId = data.clickupId;
+	if (data.companyName !== undefined) updateData.companyName = data.companyName;
+
+	batch.update(db.collection('transactions').doc(transactionId), updateData);
+
+	// Apply new summaries
+	await updateSummaries(batch, {
+		dateKey: newDateKey,
+		weekKey: newWeekKey,
+		monthKey: newMonthKey,
+		type: newType,
+		amountCents: newAmountCents,
+		operation: 'increment',
+	});
+
+	await batch.commit();
+
+	await logAudit({
+		action: 'transaction.update',
+		entityType: 'transaction',
+		entityId: transactionId,
+		amountCents: newAmountCents,
+		categoryId: data.categoryId ?? oldData.categoryId,
+		createdBy: actorId,
+		createdAt: new Date(),
+		meta: {
+			type: newType,
+			oldType: oldData.type,
+			oldAmountCents: oldData.amountCents,
+		},
+	});
+}
+
+/**
  * List transactions with filters and pagination
  */
 export async function listTransactions(options: {

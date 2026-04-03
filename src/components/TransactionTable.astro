@@ -67,6 +67,14 @@ function formatCurrency(cents: number): string {
 							{userEmails.get(tx.createdBy) || tx.createdBy}
 						</td>
 						<td class="px-6 py-4 whitespace-nowrap text-sm">
+							{(user?.role === 'admin' || user?.uid === tx.createdBy) && (
+								<a
+									href={`/transactions/${tx.id}/edit`}
+									class="text-blue-600 hover:text-blue-900 mr-3"
+								>
+									Edit
+								</a>
+							)}
 							{user?.role === 'admin' && (
 								<form method="POST" action={`/transactions/${tx.id}/delete`} class="inline">
 									<button
@@ -78,7 +86,7 @@ function formatCurrency(cents: number): string {
 									</button>
 								</form>
 							)}
-							{user?.role !== 'admin' && (
+							{user?.role !== 'admin' && user?.uid !== tx.createdBy && (
 								<span class="text-gray-400 text-sm">-</span>
 							)}
 						</td>
