@@ -11,12 +11,18 @@ export const POST: APIRoute = async ({ request }) => {
 
 	const snapshot = await db.collection('repeatable_payments')
 		.where('active', '==', true)
-		.where('nextDueDate', '<=', now)
 		.get();
 
+	// Filter in memory to avoid needing a composite index
+	const dueDocs = snapshot.docs.filter(doc => {
+		const nextDueDate = doc.data().nextDueDate?.toDate?.();
+		return nextDueDate && nextDueDate <= now;
+	});
+
 	let created = 0;
-	for (const doc of snapshot.docs) {
+	for (const doc of dueDocs) {
 		const data = doc.data();
+		if (!data.type || !data.amountCents || !data.categoryId) continue;
 		const nextDueDate = data.nextDueDate.toDate();
 
 		await createTransaction({

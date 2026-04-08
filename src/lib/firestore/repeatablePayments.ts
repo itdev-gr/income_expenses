@@ -31,7 +31,7 @@ export async function createRepeatablePayment(
 	data: Omit<RepeatablePayment, 'id' | 'nextDueDate' | 'createdAt' | 'updatedAt'>
 ): Promise<string> {
 	const now = new Date();
-	const nextDueDate = calculateNextDueDate(data.startDate, data.frequency);
+	const nextDueDate = data.startDate;
 
 	// Build payment data, excluding undefined optional fields
 	const paymentData: any = {

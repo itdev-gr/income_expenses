@@ -103,14 +103,23 @@ if (Astro.request.method === 'POST') {
 	} else if (action === 'runDue') {
 		try {
 			const now = new Date();
-			const snapshot = await db.collection('repeatable_payments')
+			const duePayments = await db.collection('repeatable_payments')
 				.where('active', '==', true)
-				.where('nextDueDate', '<=', now)
 				.get();
 
+			// Filter in memory to avoid needing a composite index
+			const dueDocs = duePayments.docs.filter(doc => {
+				const nextDueDate = doc.data().nextDueDate?.toDate?.();
+				return nextDueDate && nextDueDate <= now;
+			});
+
 			let created = 0;
-			for (const doc of snapshot.docs) {
+			for (const doc of dueDocs) {
 				const data = doc.data();
+
+				// Skip documents with missing required fields
+				if (!data.type || !data.amountCents || !data.categoryId) continue;
+
 				const nextDueDate = data.nextDueDate.toDate();
 
 				await createTransaction({
@@ -144,7 +153,10 @@ if (Astro.request.method === 'POST') {
 			}
 			runSummary = { created };
 		} catch (err: any) {
-			error = err.message || 'Failed to run due payments';
+			const message = err instanceof Response
+				? `HTTP ${err.status}: ${err.statusText}`
+				: (err?.message || String(err));
+			error = `Run due failed: ${message}`;
 		}
 	}
 }
