@@ -102,7 +102,7 @@ if (Astro.request.method === 'POST') {
 			const baseUrl = `${Astro.url.origin}`;
 			const response = await fetch(`${baseUrl}/api/repeatable-payments/run-due`, {
 				method: 'POST',
-				headers: request.headers,
+				headers: Astro.request.headers,
 			});
 			if (!response.ok) {
 				const text = await response.text();
