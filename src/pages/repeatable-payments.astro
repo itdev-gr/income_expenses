@@ -99,8 +99,10 @@ if (Astro.request.method === 'POST') {
 		}
 	} else if (action === 'runDue') {
 		try {
-			const response = await fetch('/api/repeatable-payments/run-due', {
+			const baseUrl = `${Astro.url.origin}`;
+			const response = await fetch(`${baseUrl}/api/repeatable-payments/run-due`, {
 				method: 'POST',
+				headers: request.headers,
 			});
 			if (!response.ok) {
 				const text = await response.text();
