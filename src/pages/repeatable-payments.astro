@@ -1,14 +1,17 @@
 ---
 import Layout from '../components/Layout.astro';
 import { requireAdmin } from '../lib/auth';
-import { 
-	listRepeatablePayments, 
-	createRepeatablePayment, 
+import {
+	listRepeatablePayments,
+	createRepeatablePayment,
 	deleteRepeatablePayment,
-	toggleRepeatablePayment 
+	toggleRepeatablePayment,
+	calculateNextDueDate
 } from '../lib/firestore/repeatablePayments';
 import { listActiveCategories, getOrCreatePaymentTypeCategory } from '../lib/firestore/categories';
-import { auth } from '../lib/firebaseAdmin';
+import { createTransaction } from '../lib/firestore/transactions';
+import { logAudit } from '../lib/firestore/audit';
+import { auth, db } from '../lib/firebaseAdmin';
 import { getToday, formatDate } from '../lib/dates';
 import type { TransactionType, RepeatFrequency } from '../lib/types';
 
@@ -99,17 +102,47 @@ if (Astro.request.method === 'POST') {
 		}
 	} else if (action === 'runDue') {
 		try {
-			const baseUrl = `${Astro.url.origin}`;
-			const response = await fetch(`${baseUrl}/api/repeatable-payments/run-due`, {
-				method: 'POST',
-				headers: Astro.request.headers,
-			});
-			if (!response.ok) {
-				const text = await response.text();
-				throw new Error(text || 'Failed to run due payments');
+			const now = new Date();
+			const snapshot = await db.collection('repeatable_payments')
+				.where('active', '==', true)
+				.where('nextDueDate', '<=', now)
+				.get();
+
+			let created = 0;
+			for (const doc of snapshot.docs) {
+				const data = doc.data();
+				const nextDueDate = data.nextDueDate.toDate();
+
+				await createTransaction({
+					ts: nextDueDate,
+					type: data.type,
+					amountCents: data.amountCents,
+					categoryId: data.categoryId,
+					note: data.note || '',
+					clickupId: data.clickupId,
+					companyName: data.companyName,
+					createdBy: user.uid,
+				});
+
+				const updatedNextDue = calculateNextDueDate(nextDueDate, data.frequency);
+				await db.collection('repeatable_payments').doc(doc.id).update({
+					nextDueDate: updatedNextDue,
+					updatedAt: new Date(),
+				});
+
+				await logAudit({
+					action: 'repeatable.run_due',
+					entityType: 'repeatable_payment',
+					entityId: doc.id,
+					amountCents: data.amountCents,
+					categoryId: data.categoryId,
+					createdBy: user.uid,
+					createdAt: new Date(),
+				});
+
+				created += 1;
 			}
-			const data = await response.json();
-			runSummary = { created: data.created || 0 };
+			runSummary = { created };
 		} catch (err: any) {
 			error = err.message || 'Failed to run due payments';
 		}
